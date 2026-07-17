@@ -1,0 +1,85 @@
+/**
+ * Lumina Study design tokens. Source: the user's design system reference
+ * (primary indigo #2E3192, secondary mint #98FFD9, tertiary #F0F4FF,
+ * neutral slate #64748B). Light, clay-UI theme only — no dark mode.
+ * Components consume tokens only — never raw hex.
+ */
+
+:root {
+  /* Backgrounds */
+  --bg-page: #f6f7fd;
+  --bg-surface-1: #ffffff;
+  --bg-surface-2: #ffffff;
+  --bg-tertiary: #f0f4ff;
+
+  /* Text */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  /* Primary — indigo #2E3192 */
+  --accent: #2e3192;
+  --accent-hover: #262875;
+  --accent-active: #1e2059;
+  --on-accent: #ffffff;
+  --accent-soft: rgb(46 49 146 / 0.08);
+
+  /* Secondary — mint #98FFD9 */
+  --mint: #2ee8ac;
+  --mint-hover: #16c48e;
+  --mint-soft: rgb(46 232 172 / 0.14);
+  --on-mint: #063b2c;
+
+  /* Borders & focus */
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --focus-ring: #4448c4;
+
+  /* Semantic */
+  --danger: #dc4545;
+  --warning: #d97706;
+  --success: #16c48e;
+
+  /* Clay elevation — soft, indigo-tinted double shadows (never pure black) */
+  --shadow-clay: 0 1px 2px rgb(46 49 146 / 0.05), 0 6px 16px rgb(46 49 146 / 0.08);
+  --shadow-clay-lg: 0 2px 4px rgb(46 49 146 / 0.06), 0 16px 32px rgb(46 49 146 / 0.12);
+  --shadow-clay-pressed: inset 0 1px 3px rgb(46 49 146 / 0.12);
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 320ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Spacing — 4px base scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Radii — clay UI is generously rounded */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 24px;
+  --radius-2xl: 32px;
+  --radius-full: 999px;
+
+  /* Typography */
+  --font-display: 'Plus Jakarta Sans Variable', 'Inter Variable', system-ui, sans-serif;
+  --font-body: 'Inter Variable', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Code', monospace;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+}

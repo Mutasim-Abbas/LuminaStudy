@@ -1,0 +1,10 @@
+{
+  "name": "Lumina Study",
+  "short_name": "Lumina",
+  "description": "AI study tools, grade calculator and degree planner.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f7fd",
+  "theme_color": "#2e3192",
+  "icons": []
+}
