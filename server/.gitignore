@@ -1,0 +1,16 @@
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+
+# Build & deps
+node_modules/
+dist/
+
+# Local database
+data/
+*.db
+*.db-journal
+
+# Logs
+*.log

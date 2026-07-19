@@ -19,6 +19,8 @@ export interface StudySet {
   description: string;
   /** 0–100. Recomputed from quiz/flashcard review — not hand-set except on seed. */
   mastery: number;
+  /** Updated whenever the set is reviewed — powers the "Updated Xh ago" chip. */
+  lastUpdatedMs: number;
   cards: Flashcard[];
   quiz: QuizQuestion[];
 }
@@ -30,6 +32,7 @@ export const SEED_STUDY_SETS: StudySet[] = [
     title: 'Bio 101: Cell Theory',
     description: 'Reviewing mitochondria, cellular respiration, and mitosis basics.',
     mastery: 62,
+    lastUpdatedMs: Date.now() - 2 * 60 * 60 * 1000,
     cards: [
       { id: 'c1', front: 'What are the three parts of cell theory?', back: 'All living things are made of cells; the cell is the basic unit of life; all cells come from pre-existing cells.' },
       { id: 'c2', front: 'What is the function of mitochondria?', back: 'Produce ATP (energy) through cellular respiration — the "powerhouse of the cell".' },
@@ -40,7 +43,7 @@ export const SEED_STUDY_SETS: StudySet[] = [
       {
         id: 'q1',
         prompt: 'Which organelle is primarily responsible for producing ATP?',
-        options: ['Nucleus', 'Mitochondria', 'Ribosome', 'Golgi apparatus'],
+        options: ['Serotonin', 'Mitochondria', 'Ribosome', 'Golgi apparatus'],
         answerIndex: 1,
         explanation: 'Mitochondria carry out cellular respiration, converting glucose into ATP.',
       },
@@ -59,6 +62,7 @@ export const SEED_STUDY_SETS: StudySet[] = [
     title: 'Intro to Psych: Memory',
     description: 'Key concepts: short vs. long-term memory, encoding, retrieval.',
     mastery: 41,
+    lastUpdatedMs: Date.now() - 24 * 60 * 60 * 1000,
     cards: [
       { id: 'c1', front: 'What is the primary brain region for long-term memory?', back: 'The hippocampus.' },
       { id: 'c2', front: 'What is encoding?', back: 'The process of converting information into a form the brain can store.' },
@@ -88,3 +92,16 @@ export const SEED_STUDY_SETS: StudySet[] = [
     ],
   },
 ];
+
+/** "2h ago", "1d ago", "Just now" — relative to the set's lastUpdatedMs. */
+export function relativeTime(ms: number | undefined): string {
+  if (!ms || !Number.isFinite(ms)) return 'recently';
+  const diff = Date.now() - ms;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}

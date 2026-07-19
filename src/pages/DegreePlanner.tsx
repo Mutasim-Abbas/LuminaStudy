@@ -9,6 +9,8 @@ import {
 } from '../engine/degree';
 import { DEFAULT_SCALE } from '../engine/grades';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useCountUp } from '../hooks/useCountUp';
+import { GraduationCapIcon } from '../components/icons';
 
 const LETTERS = DEFAULT_SCALE.map((b) => b.letter);
 
@@ -33,6 +35,12 @@ const SEED: Semester[] = [
 
 function fmtGPA(n: number | null): string {
   return n === null ? '—' : n.toFixed(2);
+}
+
+/** Big GPA figure that counts to its new value whenever grades change. */
+function AnimatedGPA({ value, className }: { value: number | null; className: string }) {
+  const animated = useCountUp(value ?? 0);
+  return <p className={className}>{value === null ? '—' : animated.toFixed(2)}</p>;
 }
 
 export default function DegreePlanner() {
@@ -72,23 +80,26 @@ export default function DegreePlanner() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[960px] px-4 py-10 sm:px-6">
-      <p className="mb-1 font-mono text-xs font-semibold uppercase tracking-wide text-accent">
-        Degree Planner
-      </p>
-      <h1 className="font-display text-3xl font-bold tracking-tight text-primary sm:text-4xl">
-        Your GPA, semester by semester
-      </h1>
+    <div className="mx-auto w-full max-w-[960px] px-4 pb-stack-xl pt-stack-md sm:px-6">
+      <div className="mb-2 flex items-center gap-2 text-primary">
+        <GraduationCapIcon className="h-5 w-5" />
+        <span className="font-label-lg text-label-lg uppercase tracking-wider">Degree Planner</span>
+      </div>
+      <h1 className="font-display text-headline-lg text-on-surface">Your GPA, semester by semester</h1>
 
       {/* -------- Cumulative summary -------- */}
-      <div className="clay-card mt-8 flex flex-wrap items-center gap-8 p-6">
+      <div className="mt-8 flex flex-wrap items-center gap-8 rounded-xl border border-surface-variant bg-white p-6 shadow-soft">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Cumulative GPA</p>
-          <p className="font-display text-4xl font-bold text-accent">{fmtGPA(cumulative)}</p>
+          <p className="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant">
+            Cumulative GPA
+          </p>
+          <AnimatedGPA value={cumulative} className="font-display text-headline-md text-primary" />
         </div>
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted">Credits completed</p>
-          <p className="font-display text-4xl font-bold text-primary">{credits}</p>
+          <p className="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant">
+            Credits completed
+          </p>
+          <p className="font-display text-headline-md text-on-surface">{credits}</p>
         </div>
       </div>
 
@@ -97,7 +108,7 @@ export default function DegreePlanner() {
         {semesters.map((sem) => {
           const gpa = semesterGPA(sem);
           return (
-            <section key={sem.id} className="clay-card p-5">
+            <section key={sem.id} className="rounded-xl border border-surface-variant bg-white p-5 shadow-card">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <input
                   aria-label="Semester name"
@@ -107,14 +118,16 @@ export default function DegreePlanner() {
                       sems.map((s) => (s.id === sem.id ? { ...s, name: e.target.value } : s)),
                     )
                   }
-                  className="min-w-0 flex-1 font-display text-lg font-semibold text-primary focus:outline-none"
+                  className="min-w-0 flex-1 font-display text-title-lg text-on-surface focus:outline-none"
                 />
                 <div className="flex shrink-0 items-center gap-3">
-                  <span className="text-sm font-medium text-secondary">Semester GPA: {fmtGPA(gpa)}</span>
+                  <span className="font-label-sm text-label-sm font-medium text-on-surface-variant">
+                    Semester GPA: {fmtGPA(gpa)}
+                  </span>
                   <button
                     type="button"
                     onClick={() => removeSemester(sem.id)}
-                    className="text-xs font-medium text-muted hover:text-danger"
+                    className="font-label-sm text-label-sm font-medium text-on-surface-variant hover:text-error"
                   >
                     Remove semester
                   </button>
@@ -128,7 +141,7 @@ export default function DegreePlanner() {
                       aria-label="Course name"
                       value={c.name}
                       onChange={(e) => updateCourse(sem.id, c.id, { name: e.target.value })}
-                      className="min-w-0 flex-1 rounded-lg border border-border bg-page px-3 py-2 text-sm text-primary focus:border-accent focus:outline-none"
+                      className="min-w-0 flex-1 rounded-lg border border-outline-variant bg-surface-container-low px-3 py-2 font-body text-body-md text-on-surface focus:border-2 focus:border-primary focus:outline-none"
                     />
                     <div className="flex items-center gap-1.5">
                       <input
@@ -138,9 +151,9 @@ export default function DegreePlanner() {
                         max={12}
                         value={c.credits}
                         onChange={(e) => updateCourse(sem.id, c.id, { credits: Number(e.target.value) })}
-                        className="w-14 rounded-lg border border-border bg-page px-2 py-2 text-center text-sm text-primary focus:border-accent focus:outline-none"
+                        className="w-14 rounded-lg border border-outline-variant bg-surface-container-low px-2 py-2 text-center font-body text-body-md text-on-surface focus:border-2 focus:border-primary focus:outline-none"
                       />
-                      <span className="text-xs text-muted">cr</span>
+                      <span className="font-label-sm text-label-sm text-on-surface-variant">cr</span>
                     </div>
                     <select
                       aria-label={`${c.name} grade`}
@@ -148,7 +161,7 @@ export default function DegreePlanner() {
                       onChange={(e) =>
                         updateCourse(sem.id, c.id, { letter: e.target.value === '' ? null : e.target.value })
                       }
-                      className="rounded-lg border border-border bg-page px-2.5 py-2 text-sm text-primary focus:border-accent focus:outline-none"
+                      className="rounded-lg border border-outline-variant bg-surface-container-low px-2.5 py-2 font-body text-body-md text-on-surface focus:border-2 focus:border-primary focus:outline-none"
                     >
                       <option value="">In progress</option>
                       {LETTERS.map((l) => (
@@ -161,7 +174,7 @@ export default function DegreePlanner() {
                       type="button"
                       onClick={() => removeCourse(sem.id, c.id)}
                       aria-label={`Remove ${c.name}`}
-                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted hover:bg-tertiary hover:text-danger"
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-on-surface-variant hover:bg-error-container hover:text-error"
                     >
                       ×
                     </button>
@@ -172,7 +185,7 @@ export default function DegreePlanner() {
               <button
                 type="button"
                 onClick={() => addCourse(sem.id)}
-                className="pill mt-3 bg-tertiary px-3.5 py-1.5 text-xs font-medium text-accent hover:bg-accent-soft"
+                className="pressable mt-3 rounded-full bg-surface-container-low px-3.5 py-1.5 font-label-sm text-label-sm font-medium text-primary hover:bg-primary-fixed/60"
               >
                 + Add course
               </button>
@@ -184,19 +197,19 @@ export default function DegreePlanner() {
       <button
         type="button"
         onClick={addSemester}
-        className="pill mt-4 bg-accent px-5 py-2.5 text-sm font-semibold text-on-accent shadow-clay"
+        className="pressable mt-4 rounded-lg bg-primary px-5 py-2.5 font-label-lg text-label-lg text-on-primary shadow-sm hover:bg-surface-tint"
       >
         + Add semester
       </button>
 
       {/* -------- What-if -------- */}
-      <section className="clay-card mt-8 p-5">
-        <h2 className="font-display text-lg font-semibold text-primary">What if…</h2>
-        <p className="mt-1 text-sm text-secondary">
+      <section className="mt-8 rounded-xl border border-surface-variant bg-white p-5 shadow-card">
+        <h2 className="font-display text-title-lg text-on-surface">What if…</h2>
+        <p className="mt-1 font-body text-body-md text-on-surface-variant">
           Project your cumulative GPA after a future term.
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-4">
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+          <label className="flex flex-col gap-1 font-label-sm text-label-sm font-medium text-on-surface-variant">
             Credits next term
             <input
               type="number"
@@ -204,10 +217,10 @@ export default function DegreePlanner() {
               max={30}
               value={futureCredits}
               onChange={(e) => setFutureCredits(Number(e.target.value))}
-              className="w-24 rounded-lg border border-border bg-page px-2.5 py-2 text-sm text-primary focus:border-accent focus:outline-none"
+              className="w-24 rounded-lg border border-outline-variant bg-surface-container-low px-2.5 py-2 font-body text-body-md text-on-surface focus:border-2 focus:border-primary focus:outline-none"
             />
           </label>
-          <label className="flex flex-col gap-1 text-xs font-medium text-muted">
+          <label className="flex flex-col gap-1 font-label-sm text-label-sm font-medium text-on-surface-variant">
             Expected GPA
             <input
               type="number"
@@ -216,12 +229,14 @@ export default function DegreePlanner() {
               step={0.1}
               value={futureGpa}
               onChange={(e) => setFutureGpa(Number(e.target.value))}
-              className="w-24 rounded-lg border border-border bg-page px-2.5 py-2 text-sm text-primary focus:border-accent focus:outline-none"
+              className="w-24 rounded-lg border border-outline-variant bg-surface-container-low px-2.5 py-2 font-body text-body-md text-on-surface focus:border-2 focus:border-primary focus:outline-none"
             />
           </label>
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-muted">Projected cumulative</p>
-            <p className="font-display text-2xl font-bold text-mint-hover">{fmtGPA(projected)}</p>
+            <p className="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant">
+              Projected cumulative
+            </p>
+            <p className="font-display text-title-lg font-bold text-secondary">{fmtGPA(projected)}</p>
           </div>
         </div>
       </section>

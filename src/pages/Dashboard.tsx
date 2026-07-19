@@ -1,68 +1,66 @@
-import { Suspense, lazy, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useCountUp } from '../hooks/useCountUp';
-import { BlurText } from '../components/BlurText';
-import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
+import { SEED_STUDY_SETS, relativeTime, type StudySet } from '../data/studySets';
+import { EMPTY_ACTIVITY, currentStreak, weeklyGoalProgress, formatStudyTime, type ActivityState } from '../engine/activity';
+import { PlusIcon, LightbulbIcon, FlameIcon, BiotechIcon, PsychologyIcon, MenuBookIcon } from '../components/icons';
 
-// The 3D scene is heavy — load it only once the dashboard mounts.
-const StudyOrb = lazy(() =>
-  import('../components/three/StudyOrb').then((m) => ({ default: m.StudyOrb })),
-);
+/** Weekly target for cards reviewed + quiz questions answered, combined. */
+const WEEKLY_GOAL = 120;
 
-function MasteryBar({ value }: { value: number }) {
-  return (
-    <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-tertiary">
-      <div
-        className="h-full rounded-full bg-mint transition-[width] duration-slow ease-out"
-        style={{ width: `${value}%` }}
-      />
-    </div>
-  );
+function subjectIcon(subject: string) {
+  const s = subject.toLowerCase();
+  if (s.includes('bio')) return BiotechIcon;
+  if (s.includes('psych')) return PsychologyIcon;
+  return MenuBookIcon;
 }
 
-function ProgressRing({ value }: { value: number }) {
+function ProgressRing({ value, size = 176 }: { value: number; size?: number }) {
   const animated = useCountUp(value);
-  const r = 34;
+  const stroke = 12;
+  const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
-  const offset = c - (animated / 100) * c;
+  const offset = c - (Math.min(100, animated) / 100) * c;
+  const mid = size / 2;
   return (
-    <svg width="90" height="90" viewBox="0 0 90 90" role="img" aria-label={`${value}% average mastery`}>
-      <circle cx="45" cy="45" r={r} fill="none" stroke="var(--bg-tertiary)" strokeWidth="8" />
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${value}% of weekly goal`}>
+      <circle cx={mid} cy={mid} r={r} fill="none" stroke="var(--surface-container-high)" strokeWidth={stroke} />
       <circle
-        cx="45"
-        cy="45"
+        cx={mid}
+        cy={mid}
         r={r}
         fill="none"
-        stroke="var(--accent)"
-        strokeWidth="8"
+        stroke="var(--secondary)"
+        strokeWidth={stroke}
         strokeLinecap="round"
         strokeDasharray={c}
         strokeDashoffset={offset}
-        transform="rotate(-90 45 45)"
+        transform={`rotate(-90 ${mid} ${mid})`}
       />
       <text
-        x="45"
-        y="50"
+        x={mid}
+        y={mid - 6}
         textAnchor="middle"
-        className="font-display text-lg font-bold"
-        fill="var(--text-primary)"
+        className="font-display"
+        fontSize="32"
+        fontWeight="700"
+        fill="var(--on-surface)"
       >
         {Math.round(animated)}%
+      </text>
+      <text x={mid} y={mid + 20} textAnchor="middle" className="font-body" fontSize="12" fill="var(--on-surface-variant)">
+        of Goal
       </text>
     </svg>
   );
 }
 
-function StatTile({ label, value, suffix = '' }: { label: string; value: number; suffix?: string }) {
-  const animated = useCountUp(value);
+function StatTile({ label, value }: { label: string; value: string }) {
   return (
-    <div className="clay-card p-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">{label}</p>
-      <p className="mt-1 font-display text-2xl font-bold text-primary">
-        {Math.round(animated)}
-        {suffix}
-      </p>
+    <div className="rounded-lg border border-surface-variant bg-surface-container-low p-4">
+      <span className="block font-label-sm text-label-sm text-on-surface-variant mb-1">{label}</span>
+      <span className="font-display text-title-lg font-bold text-primary">{value}</span>
     </div>
   );
 }
@@ -71,179 +69,158 @@ export default function Dashboard() {
   const [name, setName] = useLocalStorage('lumina.userName', '');
   const [editingName, setEditingName] = useState(false);
   const [studySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [activity] = useLocalStorage<ActivityState>('lumina.activity', EMPTY_ACTIVITY);
 
-  const avgMastery = useMemo(
-    () =>
-      studySets.length === 0
-        ? 0
-        : Math.round(studySets.reduce((sum, s) => sum + s.mastery, 0) / studySets.length),
-    [studySets],
-  );
-
-  const totalCards = useMemo(
-    () => studySets.reduce((sum, s) => sum + s.cards.length, 0),
-    [studySets],
-  );
-  const totalQuestions = useMemo(
-    () => studySets.reduce((sum, s) => sum + s.quiz.length, 0),
-    [studySets],
-  );
-
-  const weakest = useMemo(
-    () => (studySets.length === 0 ? null : [...studySets].sort((a, b) => a.mastery - b.mastery)[0]),
-    [studySets],
-  );
+  const streak = useMemo(() => currentStreak(activity), [activity]);
+  const weeklyProgress = useMemo(() => weeklyGoalProgress(activity, WEEKLY_GOAL), [activity]);
 
   return (
-    <div>
-      {/* ---------------- Hero with 3D orb ---------------- */}
-      <section className="relative overflow-hidden border-b border-border bg-surface-1">
-        <div className="hero-aurora" aria-hidden="true" />
-
-        {/* The orb sits to the right on desktop, and behind the copy on mobile. */}
-        <div
-          className="pointer-events-none absolute inset-y-0 right-0 w-full opacity-60 md:w-[52%] md:opacity-100"
-          aria-hidden="true"
-        >
-          <Suspense fallback={null}>
-            <StudyOrb style={{ width: '100%', height: '100%' }} />
-          </Suspense>
-        </div>
-
-        <div className="relative mx-auto w-full max-w-[1000px] px-4 py-16 sm:px-6 md:py-20">
-          <div className="max-w-lg">
-            {editingName ? (
-              <input
-                autoFocus
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onBlur={() => setEditingName(false)}
-                onKeyDown={(e) => e.key === 'Enter' && setEditingName(false)}
-                placeholder="Your name"
-                className="w-full bg-transparent font-display text-4xl font-bold text-primary focus:outline-none sm:text-5xl"
-              />
-            ) : (
-              <h1 className="font-display text-4xl font-bold leading-[1.1] tracking-tight text-primary sm:text-5xl">
-                <BlurText text={name ? `Hello, ${name}!` : 'Hello there!'} delay={80} />
-              </h1>
-            )}
-
-            <p className="rise-in mt-3 text-lg text-secondary" style={{ animationDelay: '260ms' }}>
-              Ready to master your subjects today?
-            </p>
-
-            <div className="rise-in mt-6 flex flex-wrap items-center gap-3" style={{ animationDelay: '340ms' }}>
-              <Link
-                to="/upload"
-                className="pill pressable bg-accent px-5 py-3 text-sm font-semibold text-on-accent shadow-clay-lg"
-              >
-                + Start New Study Set
-              </Link>
-              <Link
-                to="/calculator"
-                className="pill pressable bg-surface-1 px-5 py-3 text-sm font-semibold text-accent shadow-clay"
-              >
-                What do I need on my final?
-              </Link>
+    <div className="mx-auto w-full max-w-container-max px-4 pb-stack-xl pt-stack-md md:px-gutter">
+      {/* ---------------- Hero ---------------- */}
+      <div className="mb-stack-xl flex flex-col items-start justify-between gap-6 rounded-xl border border-surface-variant bg-gradient-to-r from-surface-container-low to-surface-bright p-6 shadow-soft md:p-8 lg:flex-row lg:items-end">
+        <div className="min-w-0 flex-1">
+          {editingName ? (
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => setEditingName(false)}
+              onKeyDown={(e) => e.key === 'Enter' && setEditingName(false)}
+              placeholder="Your name"
+              className="mb-2 w-full bg-transparent font-display text-headline-lg text-on-surface focus:outline-none"
+            />
+          ) : (
+            <h2 className="mb-2 font-display text-headline-lg text-on-surface">
+              Hello{name ? `, ${name}` : ''}!{' '}
               <button
                 type="button"
                 onClick={() => setEditingName(true)}
-                className="text-sm font-medium text-muted underline decoration-dotted hover:text-accent"
+                className="align-middle text-label-sm font-medium text-on-surface-variant underline decoration-dotted hover:text-primary"
               >
-                {name ? 'edit name' : 'add your name'}
+                {name ? 'edit' : 'add your name'}
               </button>
-            </div>
+            </h2>
+          )}
+          <p className="max-w-xl font-body text-body-lg text-on-surface-variant">
+            {streak > 0
+              ? `Ready for deep work? You're currently on a ${streak}-day study streak. Let's keep the momentum going.`
+              : 'Ready for deep work? Start a study set today to begin your streak.'}
+          </p>
+        </div>
+        <Link
+          to="/upload"
+          className="pressable flex shrink-0 items-center gap-2 rounded-lg bg-primary px-8 py-3 font-label-lg text-label-lg text-on-primary shadow-sm transition-colors hover:bg-surface-tint"
+        >
+          <PlusIcon className="h-4 w-4" />
+          Start New Study Set
+        </Link>
+      </div>
+
+      {/* ---------------- Main grid ---------------- */}
+      <div className="grid grid-cols-1 gap-gutter lg:grid-cols-12">
+        {/* Left column */}
+        <div className="flex flex-col gap-stack-md lg:col-span-8">
+          <div className="flex items-center justify-between">
+            <h3 className="font-display text-title-lg text-on-surface">Recent Study Sets</h3>
+            <Link to="/study" className="font-label-lg text-label-lg text-primary hover:text-surface-tint">
+              View All
+            </Link>
           </div>
-        </div>
-      </section>
 
-      <div className="mx-auto w-full max-w-[1000px] px-4 py-10 sm:px-6">
-        {/* ---------------- Stat tiles ---------------- */}
-        <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatTile label="Study sets" value={studySets.length} />
-          <StatTile label="Flashcards" value={totalCards} />
-          <StatTile label="Questions" value={totalQuestions} />
-          <StatTile label="Avg mastery" value={avgMastery} suffix="%" />
-        </div>
-
-        <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_300px]">
-          {/* Recent study sets */}
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-display text-lg font-semibold text-primary">Recent Study Sets</h2>
-              <Link to="/study" className="text-sm font-medium text-accent hover:underline">
-                View All
-              </Link>
-            </div>
-            <div className="stagger flex flex-col gap-3">
-              {studySets.map((set) => (
+          <div className="stagger grid grid-cols-1 gap-6 sm:grid-cols-2">
+            {studySets.map((set) => {
+              const Icon = subjectIcon(set.subject);
+              const barColor = set.mastery >= 70 ? 'bg-secondary' : 'bg-primary';
+              return (
                 <Link
                   key={set.id}
                   to={`/study/${set.id}`}
-                  className="clay-card clay-card-interactive block p-4"
+                  className="pressable group rounded-xl border border-surface-variant bg-white p-6 shadow-card transition-all hover:border-surface-tint/30"
                 >
-                  <span className="text-xs font-semibold uppercase tracking-wide text-mint-hover">
-                    {set.subject}
-                  </span>
-                  <h3 className="mt-1 font-display text-base font-semibold text-primary">
+                  <div className="mb-4 flex items-start justify-between">
+                    <div className="grid h-12 w-12 place-items-center rounded-lg bg-surface-container-low text-primary">
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <span className="rounded bg-surface-container-high px-2 py-1 font-label-sm text-label-sm text-on-surface-variant">
+                      Updated {relativeTime(set.lastUpdatedMs)}
+                    </span>
+                  </div>
+                  <h4 className="mb-1 font-display text-title-lg text-on-surface transition-colors group-hover:text-primary">
                     {set.title}
-                  </h3>
-                  <p className="mt-0.5 text-sm text-secondary">{set.description}</p>
-                  <MasteryBar value={set.mastery} />
+                  </h4>
+                  <p className="mb-6 font-body text-body-md text-on-surface-variant">{set.description}</p>
+                  <div className="space-y-2">
+                    <div className="flex justify-between font-label-sm text-label-sm text-on-surface-variant">
+                      <span>Mastery</span>
+                      <span>{set.mastery}%</span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-surface-container-high">
+                      <div className={`h-full rounded-full ${barColor}`} style={{ width: `${set.mastery}%` }} />
+                    </div>
+                  </div>
                 </Link>
-              ))}
-              {studySets.length === 0 && (
-                <div className="clay-card p-6 text-center text-sm text-secondary">
-                  No study sets yet —{' '}
-                  <Link to="/upload" className="font-medium text-accent hover:underline">
-                    upload your first notes
-                  </Link>{' '}
-                  to get started.
+              );
+            })}
+          </div>
+
+          {studySets.length === 0 && (
+            <div className="rounded-xl border border-surface-variant bg-white p-8 text-center">
+              <p className="text-on-surface-variant">No study sets yet.</p>
+              <Link to="/upload" className="mt-2 inline-block font-medium text-primary hover:underline">
+                Upload your notes to create one →
+              </Link>
+            </div>
+          )}
+
+          {/* Lumina Insight — honest: surfaces the weakest set, not an invented claim. */}
+          {(() => {
+            const weakest = studySets.length
+              ? [...studySets].sort((a, b) => a.mastery - b.mastery)[0]
+              : null;
+            if (!weakest) return null;
+            return (
+              <div className="mt-1 flex items-center gap-6 rounded-xl border border-primary-fixed bg-primary-fixed/30 p-6">
+                <div className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-primary">
+                  <LightbulbIcon className="h-8 w-8 text-on-primary" />
                 </div>
-              )}
-            </div>
-          </section>
-
-          {/* Sidebar */}
-          <aside className="stagger flex flex-col gap-4">
-            {weakest && (
-              <div className="clay-card p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-accent">
-                  Lumina Insight
-                </p>
-                <p className="mt-2 text-sm leading-snug text-secondary">
-                  You&apos;re at <span className="font-semibold text-primary">{weakest.mastery}%</span>{' '}
-                  on <span className="font-semibold text-primary">{weakest.title}</span>. A quick
-                  review session could raise your mastery fastest here.
-                </p>
-                <Link
-                  to={`/study/${weakest.id}`}
-                  className="mt-3 inline-block text-sm font-medium text-accent hover:underline"
-                >
-                  Review now →
-                </Link>
+                <div>
+                  <h4 className="mb-2 font-display text-title-lg text-on-surface">Lumina Insight</h4>
+                  <p className="font-body text-body-md text-on-surface-variant">
+                    You&apos;re at <span className="font-semibold text-on-surface">{weakest.mastery}%</span> on{' '}
+                    <span className="font-semibold text-on-surface">{weakest.title}</span>. A quick review
+                    session here would raise your overall mastery the most.
+                  </p>
+                  <Link
+                    to={`/study/${weakest.id}`}
+                    className="mt-2 inline-block font-label-lg text-label-lg text-primary hover:underline"
+                  >
+                    Review now →
+                  </Link>
+                </div>
               </div>
-            )}
+            );
+          })()}
+        </div>
 
-            <div className="clay-card flex flex-col items-center p-5">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">
-                Average Mastery
-              </p>
-              <ProgressRing value={avgMastery} />
+        {/* Right column — Weekly Progress */}
+        <div className="flex flex-col gap-stack-md lg:col-span-4">
+          <div className="flex flex-col items-center rounded-xl border border-surface-variant bg-white p-8 shadow-soft">
+            <h3 className="mb-6 w-full text-left font-display text-title-lg text-on-surface">Weekly Progress</h3>
+            <ProgressRing value={weeklyProgress} />
+            <div className="mt-8 grid w-full grid-cols-2 gap-4">
+              <StatTile label="Cards Reviewed" value={activity.cardsReviewed.toLocaleString('en-US')} />
+              <StatTile label="Study Time" value={formatStudyTime(activity.studyTimeMs)} />
+              <div className="col-span-2 flex items-center justify-between rounded-lg border border-surface-variant bg-surface-container-low p-4">
+                <div className="flex items-center gap-2">
+                  <FlameIcon className="h-5 w-5 text-secondary" />
+                  <span className="font-label-sm text-label-sm text-on-surface-variant">Current Streak</span>
+                </div>
+                <span className="font-display text-title-lg font-bold text-secondary">
+                  {streak} {streak === 1 ? 'Day' : 'Days'}
+                </span>
+              </div>
             </div>
-
-            <div className="clay-card flex flex-col gap-2 p-4">
-              <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted">
-                Quick tools
-              </p>
-              <Link to="/calculator" className="text-sm font-medium text-accent hover:underline">
-                Grade Calculator →
-              </Link>
-              <Link to="/planner" className="text-sm font-medium text-accent hover:underline">
-                Degree Planner →
-              </Link>
-            </div>
-          </aside>
+          </div>
         </div>
       </div>
     </div>

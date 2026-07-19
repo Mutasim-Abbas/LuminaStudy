@@ -1,49 +1,62 @@
 /**
- * Lumina Study design tokens. Source: the user's design system reference
- * (primary indigo #2E3192, secondary mint #98FFD9, tertiary #F0F4FF,
- * neutral slate #64748B). Light, clay-UI theme only — no dark mode.
- * Components consume tokens only — never raw hex.
+ * Lumina Study design tokens — Material Design 3 tonal palette, matching the
+ * Stitch "Smart Academic Toolkit" reference exactly (see PLAN.md). Light
+ * theme only. Components consume tokens only — never raw hex.
  */
 
 :root {
-  /* Backgrounds */
-  --bg-page: #f6f7fd;
-  --bg-surface-1: #ffffff;
-  --bg-surface-2: #ffffff;
-  --bg-tertiary: #f0f4ff;
+  /* Primary — Deep Indigo (navigation, headers, high-importance actions) */
+  --primary: #15157d;
+  --primary-container: #2e3192;
+  --on-primary: #ffffff;
+  --on-primary-container: #9da1ff;
+  --primary-fixed: #e1e0ff;
+  --primary-fixed-dim: #c0c1ff;
+  --on-primary-fixed: #04006d;
+  --on-primary-fixed-variant: #373a9b;
+  --surface-tint: #4f54b4;
 
-  /* Text */
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  /* Secondary — Soft Mint (AI features, highlights, primary CTAs) */
+  --secondary: #006c53;
+  --secondary-container: #8ff6d2;
+  --on-secondary: #ffffff;
+  --on-secondary-container: #007259;
+  --secondary-fixed: #8ff6d2;
+  --secondary-fixed-dim: #72d9b7;
+  --on-secondary-fixed: #002117;
+  --on-secondary-fixed-variant: #00513e;
 
-  /* Primary — indigo #2E3192 */
-  --accent: #2e3192;
-  --accent-hover: #262875;
-  --accent-active: #1e2059;
-  --on-accent: #ffffff;
-  --accent-soft: rgb(46 49 146 / 0.08);
+  /* Surfaces — Ice Blue washes, pure white canvas */
+  --background: #fcf8ff;
+  --on-background: #16173d;
+  --surface: #fcf8ff;
+  --surface-dim: #d7d6ff;
+  --surface-bright: #fcf8ff;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #f5f2ff;
+  --surface-container: #eeecff;
+  --surface-container-high: #e8e6ff;
+  --surface-container-highest: #e1e0ff;
+  --surface-variant: #e1e0ff;
+  --on-surface: #16173d;
+  --on-surface-variant: #464652;
 
-  /* Secondary — mint #98FFD9 */
-  --mint: #2ee8ac;
-  --mint-hover: #16c48e;
-  --mint-soft: rgb(46 232 172 / 0.14);
-  --on-mint: #063b2c;
+  /* Outline */
+  --outline: #777683;
+  --outline-variant: #c7c5d4;
 
-  /* Borders & focus */
-  --border: #e2e8f0;
-  --border-strong: #cbd5e1;
-  --focus-ring: #4448c4;
+  /* Error */
+  --error: #ba1a1a;
+  --error-container: #ffdad6;
+  --on-error: #ffffff;
+  --on-error-container: #93000a;
 
-  /* Semantic */
-  --danger: #dc4545;
-  --warning: #d97706;
-  --success: #16c48e;
-
-  /* Clay elevation — soft, indigo-tinted double shadows (never pure black) */
-  --shadow-clay: 0 1px 2px rgb(46 49 146 / 0.05), 0 6px 16px rgb(46 49 146 / 0.08);
-  --shadow-clay-lg: 0 2px 4px rgb(46 49 146 / 0.06), 0 16px 32px rgb(46 49 146 / 0.12);
-  --shadow-clay-pressed: inset 0 1px 3px rgb(46 49 146 / 0.12);
+  /* Elevation — soft, indigo-tinted ambient shadows, never pure black */
+  --shadow-soft: 0 4px 20px rgb(22 23 61 / 0.08);
+  --shadow-card: 0 4px 20px rgb(22 23 61 / 0.06);
+  --shadow-flashcard: 0 4px 20px rgb(22 23 61 / 0.12);
+  --shadow-modal: 0 12px 48px rgb(22 23 61 / 0.2);
+  --shadow-nav: 4px 0 20px rgb(22 23 61 / 0.12);
 
   /* Motion */
   --duration-fast: 120ms;
@@ -52,27 +65,25 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  /* Spacing — 4px base scale */
-  --space-1: 4px;
-  --space-2: 8px;
-  --space-3: 12px;
-  --space-4: 16px;
-  --space-5: 24px;
-  --space-6: 32px;
-  --space-7: 48px;
-  --space-8: 64px;
+  /* Spacing — 8px base scale */
+  --space-xs: 4px;
+  --space-sm: 12px;
+  --space-stack-sm: 16px;
+  --space-stack-md: 32px;
+  --space-stack-xl: 64px;
+  --space-gutter: 48px;
+  --space-margin-desktop: 80px;
+  --container-max: 1440px;
 
-  /* Radii — clay UI is generously rounded */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 18px;
-  --radius-xl: 24px;
-  --radius-2xl: 32px;
-  --radius-full: 999px;
+  /* Radii */
+  --radius-default: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-full: 9999px;
 
   /* Typography */
-  --font-display: 'Plus Jakarta Sans Variable', 'Inter Variable', system-ui, sans-serif;
-  --font-body: 'Inter Variable', system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  --font-body: 'Plus Jakarta Sans Variable', 'Inter Variable', system-ui, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', monospace;
 }
 
