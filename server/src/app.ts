@@ -10,6 +10,8 @@ import fastifyStatic from '@fastify/static';
 import { env } from './env.js';
 import { healthRoutes } from './routes/health.js';
 import { generateRoutes } from './routes/generate.js';
+import { authRoutes } from './routes/auth.js';
+import { setsRoutes } from './routes/sets.js';
 
 // Path to the built frontend (LuminaStudy/dist) — same in tsx (src) and compiled (dist).
 const CLIENT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../dist');
@@ -41,6 +43,8 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   await app.register(healthRoutes);
   await app.register(generateRoutes);
+  await app.register(authRoutes);
+  await app.register(setsRoutes);
 
   // Serve the built frontend so the whole app runs from ONE server on one port
   // (no separate frontend process, no proxy). HashRouter means all client

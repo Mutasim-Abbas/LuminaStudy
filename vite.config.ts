@@ -18,5 +18,9 @@ export default defineConfig(() => ({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     css: false,
+    // Frontend only. The server has its own suite with its own environment
+    // (server/vitest.config.ts); running it from here would boot the backend
+    // against the default database path and write a stray data/lumina.db.
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
   },
 }));

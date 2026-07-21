@@ -19,3 +19,9 @@ Thumbs.db
 # Env (no secrets belong in this repo while frontend-only)
 .env
 .env.*
+
+# Local database (server keeps its own under server/data)
+data/
+*.db
+*.db-shm
+*.db-wal

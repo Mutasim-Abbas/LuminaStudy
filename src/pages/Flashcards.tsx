@@ -14,6 +14,7 @@ import {
   type Grade,
   type SrsState,
 } from '../engine/srs';
+import { pushSetQuietly } from '../lib/api';
 import { CheckCircleIcon, TouchAppIcon, TrophyIcon } from '../components/icons';
 
 /** Inline keycap, for teaching the review shortcuts in place. */
@@ -105,7 +106,13 @@ export default function Flashcards() {
       setSrs(nextSrs);
       // Mastery is derived from the schedule, never nudged by hand.
       setStudySets((sets) =>
-        sets.map((s) => (s.id !== set.id ? s : { ...s, mastery: setMastery(s, nextSrs), lastUpdatedMs: now })),
+        sets.map((s) => {
+          if (s.id !== set.id) return s;
+          const updated = { ...s, mastery: setMastery(s, nextSrs), lastUpdatedMs: now };
+          // Best-effort cloud save; a no-op when signed out.
+          pushSetQuietly(updated);
+          return updated;
+        }),
       );
       setActivity((a) => withCardReviewed(a));
 

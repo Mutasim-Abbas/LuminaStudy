@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { LuminaMark } from '../components/LuminaMark';
 import {
   DashboardIcon,
@@ -15,6 +15,7 @@ import {
 } from '../components/icons';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useTheme } from '../hooks/useTheme';
+import { useAuth } from '../hooks/useAuth';
 import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
 import { setMastery, type SrsState } from '../engine/srs';
 
@@ -78,6 +79,34 @@ function ThemeToggle() {
     >
       {goingDark ? <MoonIcon className="h-5 w-5" /> : <SunIcon className="h-5 w-5" />}
     </button>
+  );
+}
+
+/**
+ * Avatar that doubles as the account entry point: signed in it shows the
+ * account's initial and links to the account page; signed out it invites you
+ * to sign in without ever blocking use of the app.
+ */
+function AccountButton({ fallbackInitial, localName }: { fallbackInitial: string; localName: string }) {
+  const { user, loading } = useAuth();
+  const initial = user ? user.email.charAt(0).toUpperCase() : fallbackInitial;
+
+  return (
+    <Link
+      to="/account"
+      title={user ? `Signed in as ${user.email}` : localName ? `${localName} — sign in to sync` : 'Sign in to sync'}
+      aria-label={user ? `Account: ${user.email}` : 'Sign in'}
+      className="pressable relative grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-surface-container-highest bg-primary-fixed font-label-sm font-bold text-on-primary-fixed"
+    >
+      {initial}
+      {/* A quiet dot marks a synced account — no badge when signed out. */}
+      {!loading && user && (
+        <span
+          className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-surface-container-lowest bg-secondary"
+          aria-hidden="true"
+        />
+      )}
+    </Link>
   );
 }
 
@@ -260,12 +289,7 @@ export function TopBar() {
             >
               <HelpCircleIcon className="h-5 w-5" />
             </button>
-            <div
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-surface-container-highest bg-primary-fixed font-label-sm font-bold text-on-primary-fixed"
-              title={name || 'You'}
-            >
-              {initial}
-            </div>
+            <AccountButton fallbackInitial={initial} localName={name} />
           </div>
         </div>
       </header>

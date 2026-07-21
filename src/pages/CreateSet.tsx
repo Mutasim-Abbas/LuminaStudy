@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { pushSetQuietly } from '../lib/api';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { SEED_STUDY_SETS, type StudySet, type Flashcard, type QuizQuestion } from '../data/studySets';
 import { CloseIcon } from '../components/icons';
@@ -65,6 +66,8 @@ export default function CreateSet() {
       cards: finalCards,
       quiz: finalQuiz,
     };
+    // Save to the account too when signed in; a no-op otherwise.
+    pushSetQuietly(set);
     setStudySets((sets) => [set, ...sets]);
     navigate(`/study/${set.id}`);
   };

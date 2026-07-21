@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
-import { generateStudySet, getHealth, ApiError, type GeneratedSet } from '../lib/api';
+import { generateStudySet, getHealth, ApiError, type GeneratedSet, pushSetQuietly } from '../lib/api';
 import {
   UploadFileIcon,
   DocumentIcon,
@@ -114,6 +114,8 @@ export default function Upload() {
   const openCreatedSet = () => {
     if (!result) return;
     const created = toStudySet(result);
+    // Save to the account too when signed in; a no-op otherwise.
+    pushSetQuietly(created);
     setStudySets((sets) => [created, ...sets]);
     navigate(`/study/${created.id}`);
   };

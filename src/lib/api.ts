@@ -1,3 +1,5 @@
+import type { StudySet } from '../data/studySets';
+
 /**
  * Thin client for the Lumina backend. In dev, Vite proxies /api to the server,
  * so we only ever call same-origin relative paths — the Gemini key stays on the
@@ -75,4 +77,106 @@ export async function generateStudySet(input: {
     throw new ApiError('The server returned an unexpected response.', 502);
   }
   return payload.set;
+}
+
+/* ------------------------------------------------------------------ */
+/* Accounts & cloud sync                                               */
+/* ------------------------------------------------------------------ */
+
+
+export interface AccountUser {
+  id: string;
+  email: string;
+}
+
+/**
+ * Every call sends cookies (`credentials: 'include'`) because the session lives
+ * in an httpOnly cookie — this code cannot read the token, which is the point:
+ * an XSS bug can't steal a login it has no access to.
+ */
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      credentials: 'include',
+      headers: init?.body ? { 'Content-Type': 'application/json' } : undefined,
+      ...init,
+    });
+  } catch {
+    throw new ApiError('Could not reach the server. Is the backend running?', 0);
+  }
+
+  const payload = (await res.json().catch(() => null)) as (T & { message?: string }) | null;
+  if (!res.ok) throw new ApiError(payload?.message ?? 'The request failed.', res.status);
+  if (payload === null) throw new ApiError('The server returned an unexpected response.', 502);
+  return payload;
+}
+
+export async function signUp(email: string, password: string): Promise<AccountUser> {
+  const { user } = await request<{ user: AccountUser }>('/api/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  return user;
+}
+
+export async function signIn(email: string, password: string): Promise<AccountUser> {
+  const { user } = await request<{ user: AccountUser }>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  });
+  return user;
+}
+
+export async function signOut(): Promise<void> {
+  await request('/api/auth/logout', { method: 'POST' });
+}
+
+/** Current session, or null when signed out. Never throws for "not signed in". */
+export async function fetchCurrentUser(): Promise<AccountUser | null> {
+  try {
+    const { user } = await request<{ user: AccountUser | null }>('/api/auth/me');
+    return user;
+  } catch {
+    // Backend down or unreachable — treat as signed out rather than blocking boot.
+    return null;
+  }
+}
+
+export async function fetchCloudSets(): Promise<StudySet[]> {
+  const { sets } = await request<{ sets: StudySet[] }>('/api/sets');
+  return sets;
+}
+
+export async function saveCloudSet(set: StudySet): Promise<StudySet> {
+  const { set: saved } = await request<{ set: StudySet }>(`/api/sets/${encodeURIComponent(set.id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(set),
+  });
+  return saved;
+}
+
+/** Pushes local sets into the account and returns the merged server list. */
+export async function syncCloudSets(sets: StudySet[]): Promise<StudySet[]> {
+  const { sets: merged } = await request<{ sets: StudySet[] }>('/api/sets/sync', {
+    method: 'POST',
+    body: JSON.stringify({ sets }),
+  });
+  return merged;
+}
+
+export async function deleteCloudSet(id: string): Promise<void> {
+  await request(`/api/sets/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/**
+ * Fire-and-forget push of a single set.
+ *
+ * Deliberately swallows every error: the app is local-first, so a failed sync
+ * (signed out, offline, backend down) must never interrupt a study session.
+ * localStorage keeps the authoritative copy either way, and anything missed
+ * here is pushed by the bulk sync on the next sign-in.
+ */
+export function pushSetQuietly(set: StudySet): void {
+  void saveCloudSet(set).catch(() => {});
 }

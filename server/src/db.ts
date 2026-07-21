@@ -1,7 +1,19 @@
 import { mkdirSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { env } from './env.js';
+
+/**
+ * `node:sqlite` is loaded through createRequire rather than a static import.
+ * It is still flagged experimental, so Node omits it from
+ * `module.builtinModules` — the list bundlers consult to decide what to leave
+ * alone. Vite therefore strips the `node:` prefix, tries to resolve a bare
+ * `sqlite` package, and fails. Going through require hands the specifier
+ * straight to Node, which keeps the test runner working. Behaviour under
+ * `tsx` and the compiled build is unchanged.
+ */
+const nodeRequire = createRequire(import.meta.url);
+const { DatabaseSync } = nodeRequire('node:sqlite') as typeof import('node:sqlite');
 
 /**
  * SQLite via Node's built-in `node:sqlite` (no native compilation). The schema
