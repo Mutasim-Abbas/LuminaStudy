@@ -2,6 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import jwt from 'jsonwebtoken';
 import { buildApp } from '../app.js';
+import { peekCaptchaAnswer } from '../lib/captcha.js';
 import { db } from '../db.js';
 
 /** Must match the JWT_SECRET injected by vitest.config.ts. */
@@ -28,16 +29,26 @@ afterAll(async () => {
 
 const CREDS = { email: 'ada@example.com', password: 'correct horse battery' };
 
+/** Fetch a CAPTCHA and read its answer straight from the store, as a "human" would. */
+async function solvedCaptcha(): Promise<{ captchaToken: string; captcha: string }> {
+  const res = await app.inject({ method: 'GET', url: '/api/auth/captcha' });
+  const token = res.json().token as string;
+  const answer = peekCaptchaAnswer(token);
+  if (!answer) throw new Error('captcha answer not found in store');
+  return { captchaToken: token, captcha: answer };
+}
+
 /**
- * Sign up. Supplies a name by default (now required) and an elapsedMs past the
- * human-time threshold, so the bot checks don't reject the test itself. Either
- * can be overridden to exercise those checks directly.
+ * Sign up. Supplies a name (now required) and a correctly-solved CAPTCHA by
+ * default, so the bot defences don't reject the test itself. Any field can be
+ * overridden to exercise those defences directly.
  */
 async function signup(creds: Record<string, unknown> = CREDS) {
+  const captcha = await solvedCaptcha();
   return app.inject({
     method: 'POST',
     url: '/api/auth/signup',
-    payload: { name: 'Ada', elapsedMs: 5000, ...creds },
+    payload: { name: 'Ada', ...captcha, ...creds },
   });
 }
 
@@ -88,35 +99,72 @@ describe('signup', () => {
   });
 
   it('requires a name', async () => {
+    const captcha = await solvedCaptcha();
     const res = await app.inject({
       method: 'POST',
       url: '/api/auth/signup',
-      payload: { email: 'x@y.com', password: 'a good password', elapsedMs: 5000 },
+      payload: { email: 'x@y.com', password: 'a good password', ...captcha },
     });
     expect(res.statusCode).toBe(400);
+  });
+
+  it('accepts a common personal email like gmail', async () => {
+    const res = await signup({ ...CREDS, email: 'someone@gmail.com' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().user.email).toBe('someone@gmail.com');
   });
 
   it('rejects a submission that fills the honeypot', async () => {
     const res = await signup({ ...CREDS, website: 'http://spam.example' });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('failed_verification');
-    // Nothing was written.
     expect(db.prepare('SELECT COUNT(*) AS n FROM users').get()).toMatchObject({ n: 0 });
   });
 
-  it('rejects a submission that arrives impossibly fast', async () => {
-    const res = await signup({ ...CREDS, elapsedMs: 200 });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe('failed_verification');
-  });
-
-  it('allows a submission with no bot signals at all (backward compatible)', async () => {
+  it('rejects a sign-up with no CAPTCHA', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/auth/signup',
       payload: { name: 'Ada', ...CREDS },
     });
-    expect(res.statusCode).toBe(201);
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a wrong CAPTCHA answer', async () => {
+    const { captchaToken } = await solvedCaptcha();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/signup',
+      payload: { name: 'Ada', ...CREDS, captchaToken, captcha: 'wrong' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('captcha_failed');
+    expect(db.prepare('SELECT COUNT(*) AS n FROM users').get()).toMatchObject({ n: 0 });
+  });
+
+  it('will not let one CAPTCHA solve two sign-ups (single use)', async () => {
+    const captcha = await solvedCaptcha();
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/auth/signup',
+      payload: { name: 'Ada', ...CREDS, ...captcha },
+    });
+    expect(first.statusCode).toBe(201);
+    // Same token again — must be rejected as already consumed.
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/auth/signup',
+      payload: { name: 'Bob', email: 'bob@example.com', password: 'another good one', ...captcha },
+    });
+    expect(second.statusCode).toBe(400);
+    expect(second.json().error).toBe('captcha_failed');
+  });
+
+  it('serves a CAPTCHA image and token', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/auth/captcha' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().token).toBeTruthy();
+    expect(res.json().svg).toContain('<svg');
   });
 
   it('rejects a weak password and a malformed email', async () => {

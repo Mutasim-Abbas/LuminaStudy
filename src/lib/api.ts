@@ -97,10 +97,23 @@ export interface SignUpInput {
   name: string;
   email: string;
   password: string;
+  /** The token for the CAPTCHA image the user solved. */
+  captchaToken: string;
+  /** What the user typed from the CAPTCHA image. */
+  captcha: string;
   /** Honeypot — a real user leaves this empty. */
   website?: string;
-  /** Milliseconds the sign-up form was on screen before submitting. */
-  elapsedMs?: number;
+}
+
+export interface Captcha {
+  token: string;
+  /** Inline SVG markup for the challenge image. */
+  svg: string;
+}
+
+/** Fetch a fresh CAPTCHA challenge for the sign-up form. */
+export async function fetchCaptcha(): Promise<Captcha> {
+  return request<Captcha>('/api/auth/captcha');
 }
 
 /**

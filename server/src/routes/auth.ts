@@ -10,6 +10,7 @@ import {
   pruneLoginAttempts,
   recordLoginFailure,
 } from '../lib/limits.js';
+import { createCaptcha, verifyCaptcha } from '../lib/captcha.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 import {
   clearSessionCookie,
@@ -39,36 +40,24 @@ const credentials = z.object({
 });
 
 /**
- * Bot signals sent with every sign-up. Neither is a CAPTCHA — they're the cheap
- * checks that cost a real person nothing:
+ * Bot defence on sign-up, in layers:
  *
+ *  - A real CAPTCHA (`captchaToken` + `captcha`): the server drew a distorted
+ *    code, and the client must send back what a human read off the image. This
+ *    is the actual gate — the answer lives only on the server, so it can't be
+ *    scraped, and each challenge is single-use so a solved image can't be
+ *    replayed.
  *  - `website` is a honeypot: hidden from view, so only a form-filling script
- *    puts anything in it.
- *  - `elapsedMs` is how long the form was on screen. A human cannot read three
- *    labels and type an email and password in under a second and a half.
+ *    fills it. A free extra signal, checked before the CAPTCHA.
  *
- * Both are advisory — a determined bot forges them trivially. They exist to
- * stop the volume of dumb automated sign-ups, with the per-email lockout and
- * per-IP rate limit behind them for the rest. Swap in Turnstile/hCaptcha here
- * if this ever needs to hold against a targeted attack.
+ * Behind both sit the per-email lockout and per-IP rate limit.
  */
-const MIN_FORM_TIME_MS = 1500;
-
-const botSignals = z.object({
-  website: z.string().max(200).optional(),
-  elapsedMs: z.number().int().nonnegative().optional(),
-});
-
 const signupBody = credentials.extend({
   name: z.string().trim().min(1, 'Tell us your name.').max(80),
-}).merge(botSignals);
-
-/** Returns a rejection reason, or null when the submission looks human. */
-function botRejection(body: z.infer<typeof botSignals>): string | null {
-  if (body.website && body.website.trim().length > 0) return 'honeypot';
-  if (typeof body.elapsedMs === 'number' && body.elapsedMs < MIN_FORM_TIME_MS) return 'too_fast';
-  return null;
-}
+  captchaToken: z.string().min(1, 'Please complete the verification.').max(100),
+  captcha: z.string().min(1, 'Enter the characters from the image.').max(20),
+  website: z.string().max(200).optional(),
+});
 
 /** Never let a password hash leave the server. */
 function publicUser(row: Pick<UserRow, 'id' | 'email' | 'name'>) {
@@ -90,6 +79,18 @@ export async function authRoutes(app: FastifyInstance) {
     rateLimit: { max: env.NODE_ENV === 'test' ? 10_000 : 10, timeWindow: '5 minutes' },
   };
 
+  // Hands out a fresh CAPTCHA image + token for the sign-up form. Rate limited
+  // so it can't be hammered to churn memory. The token pairs with the answer
+  // the server holds; only the image comes back here.
+  app.get(
+    '/api/auth/captcha',
+    { config: { rateLimit: { max: env.NODE_ENV === 'test' ? 100_000 : 30, timeWindow: '1 minute' } } },
+    async (_request, reply) => {
+      const { token, svg } = createCaptcha(Date.now());
+      return reply.send({ token, svg });
+    },
+  );
+
   app.post('/api/auth/signup', { config: authLimit }, async (request, reply) => {
     const parsed = signupBody.safeParse(request.body);
     if (!parsed.success) {
@@ -99,14 +100,23 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    // Checked before touching the database, so a bot costs us nothing. The
-    // message is deliberately generic — naming the trap teaches the next script.
-    const rejection = botRejection(parsed.data);
-    if (rejection) {
-      request.log.warn({ rejection, email: parsed.data.email }, 'signup rejected as automated');
+    const now = Date.now();
+
+    // Honeypot first — a filled hidden field is a bot, no need to spend a
+    // CAPTCHA check on it. The message stays generic so we don't teach the trap.
+    if (parsed.data.website && parsed.data.website.trim().length > 0) {
+      request.log.warn({ email: parsed.data.email }, 'signup rejected: honeypot');
+      return reply
+        .code(400)
+        .send({ error: 'failed_verification', message: 'That didn’t look like a human submission.' });
+    }
+
+    // The real gate. Wrong or expired answer -> the client must fetch a new
+    // image, since the token is consumed on this check either way.
+    if (!verifyCaptcha(parsed.data.captchaToken, parsed.data.captcha, now)) {
       return reply.code(400).send({
-        error: 'failed_verification',
-        message: "That didn't look like a human submission. Please try again.",
+        error: 'captcha_failed',
+        message: 'The verification code was incorrect. Please try the new image.',
       });
     }
 

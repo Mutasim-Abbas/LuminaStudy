@@ -1,19 +1,18 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { ApiError } from '../lib/api';
+import { ApiError, fetchCaptcha, type Captcha } from '../lib/api';
 import { LuminaMark } from '../components/LuminaMark';
-import { CheckCircleIcon } from '../components/icons';
+import { SyncIcon } from '../components/icons';
 
 /**
  * Combined sign-in / sign-up. One form, one toggle — asking a student to find
  * a separate "register" page is friction with nothing to show for it.
  *
- * Bot resistance without a third-party CAPTCHA (see the server for the matching
- * checks): a hidden honeypot field that only a script fills, a minimum time on
- * the form, and a "confirm you're not a robot" checkbox required to submit a
- * sign-up. None is bulletproof alone; together with the server's per-account
- * lockout they stop the bulk automated sign-ups a small app actually sees.
+ * Sign-up carries a real CAPTCHA: the server draws a distorted code, and the
+ * user has to type what they see. The answer is only ever on the server, so a
+ * script can't read it out of the page — it has to actually solve the image.
+ * A hidden honeypot field sits behind it as a second, free signal.
  */
 export default function SignIn() {
   const { user, signIn, signUp, signOut, busy } = useAuth();
@@ -22,29 +21,42 @@ export default function SignIn() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [honeypot, setHoneypot] = useState('');
-  const [notRobot, setNotRobot] = useState(false);
+
+  const [captcha, setCaptcha] = useState<Captcha | null>(null);
+  const [captchaInput, setCaptchaInput] = useState('');
+  const [captchaLoading, setCaptchaLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const navigate = useNavigate();
   const location = useLocation();
   // RequireAuth stashes the page it intercepted so sign-in can land there.
   const from = (location.state as { from?: string } | null)?.from ?? '/';
-
-  // When the form was shown — used to reject submissions that arrive impossibly
-  // fast. A ref, not state, so it never triggers a re-render.
-  const shownAt = useRef(Date.now());
-  useEffect(() => {
-    shownAt.current = Date.now();
-  }, [mode]);
-
   const isSignup = mode === 'signup';
+
+  const loadCaptcha = useCallback(async () => {
+    setCaptchaLoading(true);
+    setCaptchaInput('');
+    try {
+      setCaptcha(await fetchCaptcha());
+    } catch {
+      setCaptcha(null);
+    } finally {
+      setCaptchaLoading(false);
+    }
+  }, []);
+
+  // Fetch a challenge when the sign-up form is shown, and none while signing in.
+  useEffect(() => {
+    if (isSignup) void loadCaptcha();
+    else setCaptcha(null);
+  }, [isSignup, loadCaptcha]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
 
-    if (isSignup && !notRobot) {
-      setError('Please confirm you are not a robot.');
+    if (isSignup && (!captcha || captchaInput.trim().length === 0)) {
+      setError('Please type the characters from the image.');
       return;
     }
 
@@ -55,14 +67,18 @@ export default function SignIn() {
           email,
           password,
           website: honeypot,
-          elapsedMs: Date.now() - shownAt.current,
+          captchaToken: captcha!.token,
+          captcha: captchaInput,
         });
       } else {
         await signIn(email, password);
       }
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
+      const apiErr = err instanceof ApiError ? err : null;
+      setError(apiErr ? apiErr.message : 'Something went wrong. Please try again.');
+      // A consumed or wrong CAPTCHA is dead — always hand back a fresh image.
+      if (isSignup) void loadCaptcha();
     }
   };
 
@@ -120,8 +136,7 @@ export default function SignIn() {
         </div>
 
         <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
-          {/* Honeypot: off-screen and hidden from assistive tech; a real user
-              never sees it, so anything typed here came from a script. */}
+          {/* Honeypot: off-screen and hidden from assistive tech. */}
           <div aria-hidden="true" className="absolute left-[-9999px] top-[-9999px] h-0 w-0 overflow-hidden">
             <label>
               Leave this field empty
@@ -159,7 +174,7 @@ export default function SignIn() {
               onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
-              placeholder="you@university.edu"
+              placeholder="you@gmail.com"
               className={inputClass}
             />
           </label>
@@ -178,27 +193,53 @@ export default function SignIn() {
             />
           </label>
 
-          {/* "Not a robot" — a genuine interaction, checked on the server too. */}
+          {/* Real CAPTCHA — solve the distorted image to prove you're human. */}
           {isSignup && (
-            <button
-              type="button"
-              onClick={() => setNotRobot((v) => !v)}
-              aria-pressed={notRobot}
-              className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors ${
-                notRobot
-                  ? 'border-secondary bg-secondary-container/30'
-                  : 'border-surface-variant hover:border-primary'
-              }`}
-            >
-              <span
-                className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border-2 transition-colors ${
-                  notRobot ? 'border-secondary bg-secondary text-on-secondary' : 'border-outline-variant'
-                }`}
-              >
-                {notRobot && <CheckCircleIcon className="h-4 w-4" />}
+            <div className="flex flex-col gap-1.5">
+              <span className="font-label-sm text-label-sm text-on-surface-variant">
+                Type the characters below
               </span>
-              <span className="font-body text-body-md text-on-surface">I&apos;m not a robot</span>
-            </button>
+              <div className="flex items-stretch gap-2">
+                <div className="flex h-[52px] flex-1 items-center justify-center overflow-hidden rounded-lg border border-surface-variant bg-[#f2f0f7]">
+                  {captchaLoading ? (
+                    <SyncIcon className="h-5 w-5 animate-spin text-on-surface-variant/60" />
+                  ) : captcha ? (
+                    // Trusted: this SVG is generated by our own server, not user input.
+                    <div
+                      aria-label="Verification image"
+                      role="img"
+                      className="[&>svg]:h-[50px] [&>svg]:w-full"
+                      dangerouslySetInnerHTML={{ __html: captcha.svg }}
+                    />
+                  ) : (
+                    <span className="px-2 font-label-sm text-label-sm text-error">
+                      Couldn&apos;t load the image
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadCaptcha()}
+                  aria-label="Get a new image"
+                  title="New image"
+                  className="pressable grid w-12 shrink-0 place-items-center rounded-lg border border-surface-variant text-on-surface-variant hover:border-primary hover:text-primary"
+                >
+                  <SyncIcon className="h-5 w-5" />
+                </button>
+              </div>
+              <input
+                type="text"
+                value={captchaInput}
+                onChange={(e) => setCaptchaInput(e.target.value)}
+                required
+                autoComplete="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                maxLength={10}
+                placeholder="Enter the code"
+                className={`${inputClass} tracking-[0.3em]`}
+              />
+            </div>
           )}
 
           {error && (
@@ -226,7 +267,6 @@ export default function SignIn() {
             onClick={() => {
               setMode(isSignup ? 'signin' : 'signup');
               setError(null);
-              setNotRobot(false);
             }}
             className="font-semibold text-primary hover:underline"
           >
@@ -235,7 +275,8 @@ export default function SignIn() {
         </p>
 
         <p className="mt-8 text-center font-label-sm text-label-sm text-on-surface-variant">
-          An account keeps your study sets, schedule and progress in sync across every device you use.
+          Use any email you like — a personal Gmail is perfectly fine. Your account keeps your study
+          sets and progress in sync across every device.
         </p>
       </div>
     </div>
