@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useStudyTimer } from '../hooks/useStudyTimer';
-import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
+import { type StudySet } from '../data/studySets';
 import { EMPTY_ACTIVITY, withCardReviewed, withStudyTime, type ActivityState } from '../engine/activity';
 import {
   dueCards,
@@ -56,7 +56,7 @@ const GRADES: { grade: Grade; label: string; hint: string; className: string }[]
 
 export default function Flashcards() {
   const { setId } = useParams();
-  const [studySets, setStudySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [studySets, setStudySets] = useLocalStorage<StudySet[]>('lumina.studySets', []);
   const [srs, setSrs] = useLocalStorage<SrsState>('lumina.srs', {});
   const [, setActivity] = useLocalStorage<ActivityState>('lumina.activity', EMPTY_ACTIVITY);
 

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { setMastery, type SrsState } from '../engine/srs';
-import { SEED_STUDY_SETS, relativeTime, type StudySet } from '../data/studySets';
+import { relativeTime, type StudySet } from '../data/studySets';
 import { PlusIcon, BiotechIcon, PsychologyIcon, MenuBookIcon } from '../components/icons';
 
 function subjectIcon(subject: string) {
@@ -30,7 +30,7 @@ function useFolders(studySets: StudySet[]) {
 }
 
 export default function StudySets() {
-  const [studySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [studySets] = useLocalStorage<StudySet[]>('lumina.studySets', []);
   const [srs] = useLocalStorage<SrsState>('lumina.srs', {});
   const folders = useFolders(studySets);
 

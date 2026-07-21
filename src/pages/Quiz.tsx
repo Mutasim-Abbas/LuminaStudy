@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useCountUp } from '../hooks/useCountUp';
 import { useStudyTimer } from '../hooks/useStudyTimer';
-import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
+import { type StudySet } from '../data/studySets';
 import { EMPTY_ACTIVITY, withQuizAnswered, withStudyTime, type ActivityState } from '../engine/activity';
 import { PsychologyIcon, ArrowRightIcon, CheckCircleIcon } from '../components/icons';
 
@@ -15,7 +15,7 @@ function ScoreReveal({ score }: { score: number }) {
 
 export default function Quiz() {
   const { setId } = useParams();
-  const [studySets, setStudySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [studySets, setStudySets] = useLocalStorage<StudySet[]>('lumina.studySets', []);
   const [, setActivity] = useLocalStorage<ActivityState>('lumina.activity', EMPTY_ACTIVITY);
   const set = studySets.find((s) => s.id === setId);
   const [index, setIndex] = useState(0);

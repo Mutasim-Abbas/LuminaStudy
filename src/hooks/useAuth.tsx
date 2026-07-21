@@ -9,7 +9,7 @@ import {
   type AccountUser,
   type SignUpInput,
 } from '../lib/api';
-import { SEED_STUDY_SETS, STUDY_SETS_KEY, installSeedSets, type StudySet } from '../data/studySets';
+import { STUDY_SETS_KEY, type StudySet } from '../data/studySets';
 
 /**
  * Account state, plus the one-time reconciliation that happens at sign-in.
@@ -50,10 +50,24 @@ function writeLocalSets(sets: StudySet[]) {
   }
 }
 
-/** Sets the user created before signing in, minus the untouched seed examples. */
-function localSetsWorthKeeping(): StudySet[] {
-  const seedIds = new Set(SEED_STUDY_SETS.map((s) => s.id));
-  return readLocalSets().filter((s) => !seedIds.has(s.id));
+
+
+/**
+ * One-time cleanup: earlier versions pre-installed two example sets ("Bio 101:
+ * Cell Theory", "Intro to Psych: Memory") into every library. They're gone from
+ * the product, but installs that already have them keep them in localStorage —
+ * so they're removed here, matched by title *and* their known id or seed
+ * description so a user's genuine set that happens to share a title survives.
+ */
+function purgeLegacySeeds(): void {
+  const sets = readLocalSets();
+  const isSeed = (s: StudySet) =>
+    (s.title === 'Bio 101: Cell Theory' &&
+      (s.id === 'bio-101-cell-theory' || s.description.startsWith('Reviewing mitochondria'))) ||
+    (s.title === 'Intro to Psych: Memory' &&
+      (s.id === 'psych-memory' || s.description.startsWith('Key concepts: short')));
+  const kept = sets.filter((s) => !isSeed(s));
+  if (kept.length !== sets.length) writeLocalSets(kept);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -63,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Resume an existing session on boot, and pull that account's sets.
   useEffect(() => {
+    purgeLegacySeeds();
     let cancelled = false;
     (async () => {
       const found = await fetchCurrentUser();
@@ -85,18 +100,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   /** Push local work into the account, then adopt the server's merged list. */
   const reconcile = useCallback(async () => {
-    const local = localSetsWorthKeeping();
+    const local = readLocalSets();
     const merged = local.length > 0 ? await syncCloudSets(local) : await fetchCloudSets();
-
-    if (merged.length > 0) {
-      writeLocalSets(merged);
-    } else {
-      // A brand-new account with nothing to adopt: start it on fresh examples
-      // rather than an empty library. Clearing first means the seeds are
-      // regenerated with ids unique to this install.
-      localStorage.removeItem(STUDY_SETS_KEY);
-      installSeedSets();
-    }
+    // A brand-new account simply starts empty — the library is the user's own
+    // work, not example content nobody asked for.
+    writeLocalSets(merged);
   }, []);
 
   const signUp = useCallback(

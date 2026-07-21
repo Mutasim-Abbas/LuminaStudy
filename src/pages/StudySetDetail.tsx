@@ -1,12 +1,12 @@
 import { Link, useParams } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
+import { type StudySet } from '../data/studySets';
 import { dueCount, formatDueIn, nextDueMs, setMastery, type SrsState } from '../engine/srs';
 import { LibraryIcon, QuizIcon, LightbulbIcon, MenuBookIcon } from '../components/icons';
 
 export default function StudySetDetail() {
   const { setId } = useParams();
-  const [studySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [studySets] = useLocalStorage<StudySet[]>('lumina.studySets', []);
   const [srs] = useLocalStorage<SrsState>('lumina.srs', {});
   const set = studySets.find((s) => s.id === setId);
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { pushSetQuietly } from '../lib/api';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { SEED_STUDY_SETS, type StudySet, type Flashcard, type QuizQuestion } from '../data/studySets';
+import { type StudySet, type Flashcard, type QuizQuestion } from '../data/studySets';
 import { CloseIcon } from '../components/icons';
 
 /**
@@ -24,7 +24,7 @@ const emptyQuestion = (): DraftQuestion => ({
 
 export default function CreateSet() {
   const navigate = useNavigate();
-  const [, setStudySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [, setStudySets] = useLocalStorage<StudySet[]>('lumina.studySets', []);
 
   const [title, setTitle] = useState('');
   const [subject, setSubject] = useState('');

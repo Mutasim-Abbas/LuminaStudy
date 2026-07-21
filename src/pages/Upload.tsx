@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
-import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
+import { type StudySet } from '../data/studySets';
 import {
   generateStudySet,
   getHealth,
@@ -58,7 +58,7 @@ function toStudySet(gen: GeneratedSet): StudySet {
 
 export default function Upload() {
   const navigate = useNavigate();
-  const [, setStudySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [, setStudySets] = useLocalStorage<StudySet[]>('lumina.studySets', []);
 
   const [phase, setPhase] = useState<Phase>('idle');
   const [text, setText] = useState('');

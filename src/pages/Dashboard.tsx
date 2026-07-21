@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useCountUp } from '../hooks/useCountUp';
-import { SEED_STUDY_SETS, relativeTime, type StudySet } from '../data/studySets';
+import { relativeTime, type StudySet } from '../data/studySets';
 import {
   EMPTY_ACTIVITY,
   currentStreak,
@@ -83,7 +83,7 @@ export default function Dashboard() {
   // The account's name is the real one; the editable local name is a fallback
   // for anyone who set it before accounts existed, and a nickname override.
   const name = localName || user?.name || '';
-  const [studySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [studySets] = useLocalStorage<StudySet[]>('lumina.studySets', []);
   const [activity] = useLocalStorage<ActivityState>('lumina.activity', EMPTY_ACTIVITY);
   const [srs] = useLocalStorage<SrsState>('lumina.srs', {});
 

@@ -16,7 +16,7 @@ import {
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useTheme } from '../hooks/useTheme';
 import { useAuth } from '../hooks/useAuth';
-import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
+import { type StudySet } from '../data/studySets';
 import { setMastery, type SrsState } from '../engine/srs';
 
 const LINKS: { to: string; label: string; end?: boolean; icon: (p: { className?: string }) => JSX.Element }[] = [
@@ -143,7 +143,7 @@ function searchSets(sets: StudySet[], query: string): StudySet[] {
  * field that means it.
  */
 function SetSearch() {
-  const [sets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [sets] = useLocalStorage<StudySet[]>('lumina.studySets', []);
   const [srs] = useLocalStorage<SrsState>('lumina.srs', {});
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
