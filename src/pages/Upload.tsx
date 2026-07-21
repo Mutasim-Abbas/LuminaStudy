@@ -11,6 +11,7 @@ import {
   type AiQuota,
   pushSetQuietly,
 } from '../lib/api';
+import { ExtractError, extractTextFromFile, isSupportedFile } from '../lib/extractText';
 import {
   UploadFileIcon,
   DocumentIcon,
@@ -68,6 +69,9 @@ export default function Upload() {
   const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
   const [result, setResult] = useState<GeneratedSet | null>(null);
   const [quota, setQuota] = useState<AiQuota | null>(null);
+  /** Name of the file currently being parsed, or null. */
+  const [readingFile, setReadingFile] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Check whether the server has a key, so we can guide the user honestly.
@@ -80,17 +84,63 @@ export default function Upload() {
     fetchAiQuota().then(setQuota);
   }, []);
 
-  const readTextFile = async (file: File) => {
-    if (!/\.(txt|md|csv)$/i.test(file.name)) {
-      setErrorMsg('For now, drop a .txt file — or paste your notes below. (PDF support is coming.)');
+  const readFile = async (file: File) => {
+    if (!isSupportedFile(file)) {
+      setErrorMsg('Use a PDF or a plain-text file (.txt, .md, .csv) — or paste your notes below.');
       setPhase('error');
       return;
     }
-    const content = await file.text();
-    setText(content.slice(0, MAX_CHARS));
-    setPhase('idle');
+    setReadingFile(file.name);
     setErrorMsg('');
+    try {
+      const content = await extractTextFromFile(file);
+      setText(content.slice(0, MAX_CHARS));
+      if (content.length > MAX_CHARS) {
+        setErrorMsg(
+          `That file has ${content.length.toLocaleString()} characters — kept the first ${MAX_CHARS.toLocaleString()}.`,
+        );
+      }
+      setPhase('idle');
+    } catch (err) {
+      setErrorMsg(err instanceof ExtractError ? err.message : 'Could not read that file.');
+      setPhase('error');
+    } finally {
+      setReadingFile(null);
+    }
   };
+
+  /**
+   * Handle anything droppable. A file from the OS arrives in `files`; a chunk
+   * of text or a link dragged over from another browser tab arrives as
+   * text/plain instead — treat that as pasted notes rather than ignoring it.
+   */
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      void readFile(file);
+      return;
+    }
+    const dropped = e.dataTransfer.getData('text/plain').trim();
+    if (dropped) {
+      setText((prev) => (prev.trim() ? `${prev}\n\n${dropped}` : dropped).slice(0, MAX_CHARS));
+      setPhase('idle');
+      setErrorMsg('');
+    }
+  };
+
+  // A drop that misses the zone would make the browser navigate to the file,
+  // wiping the app. Neutralise stray drops everywhere else on the window.
+  useEffect(() => {
+    const prevent = (e: DragEvent) => e.preventDefault();
+    window.addEventListener('dragover', prevent);
+    window.addEventListener('drop', prevent);
+    return () => {
+      window.removeEventListener('dragover', prevent);
+      window.removeEventListener('drop', prevent);
+    };
+  }, []);
 
   const generate = async () => {
     const trimmed = text.trim();
@@ -205,18 +255,29 @@ export default function Upload() {
             ) : (
               <>
                 <div
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
+                  onDragOver={(e) => {
                     e.preventDefault();
-                    const file = e.dataTransfer.files[0];
-                    if (file) void readTextFile(file);
+                    setDragActive(true);
                   }}
-                  className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-outline-variant p-5 text-center"
+                  onDragLeave={() => setDragActive(false)}
+                  onDrop={onDrop}
+                  className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-5 text-center transition-colors ${
+                    dragActive
+                      ? 'border-primary bg-primary/5'
+                      : 'border-outline-variant'
+                  }`}
                 >
                   <UploadFileIcon className="mb-2 h-8 w-8 text-primary-container" />
-                  <p className="mb-3 font-body text-body-md text-on-surface-variant">
-                    Drop a .txt file, or paste below
-                  </p>
+                  {readingFile ? (
+                    <p className="mb-3 flex items-center gap-2 font-body text-body-md text-on-surface-variant">
+                      <SyncIcon className="h-4 w-4 animate-spin text-primary" />
+                      Reading {readingFile}…
+                    </p>
+                  ) : (
+                    <p className="mb-3 font-body text-body-md text-on-surface-variant">
+                      Drop a PDF or .txt file — or drag text from another tab
+                    </p>
+                  )}
                   <button
                     type="button"
                     onClick={() => inputRef.current?.click()}
@@ -227,11 +288,13 @@ export default function Upload() {
                   <input
                     ref={inputRef}
                     type="file"
-                    accept=".txt,.md,.csv"
+                    accept=".pdf,.txt,.md,.csv,application/pdf,text/plain"
                     className="sr-only"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) void readTextFile(file);
+                      if (file) void readFile(file);
+                      // Allow re-picking the same file after an error.
+                      e.target.value = '';
                     }}
                   />
                 </div>
