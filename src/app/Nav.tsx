@@ -16,6 +16,7 @@ import {
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useTheme } from '../hooks/useTheme';
 import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
+import { setMastery, type SrsState } from '../engine/srs';
 
 const LINKS: { to: string; label: string; end?: boolean; icon: (p: { className?: string }) => JSX.Element }[] = [
   { to: '/', label: 'Dashboard', end: true, icon: DashboardIcon },
@@ -98,6 +99,7 @@ function searchSets(sets: StudySet[], query: string): StudySet[] {
  */
 function SetSearch() {
   const [sets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [srs] = useLocalStorage<SrsState>('lumina.srs', {});
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState(false);
@@ -206,7 +208,7 @@ function SetSearch() {
                     {set.subject} · {set.cards.length} cards
                   </span>
                 </span>
-                <span className="shrink-0 font-label-sm text-label-sm text-on-surface-variant">{set.mastery}%</span>
+                <span className="shrink-0 font-label-sm text-label-sm text-on-surface-variant">{setMastery(set, srs)}%</span>
               </button>
             ))
           )}

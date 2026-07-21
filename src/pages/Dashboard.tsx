@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useCountUp } from '../hooks/useCountUp';
@@ -12,6 +12,7 @@ import {
   formatStudyTime,
   type ActivityState,
 } from '../engine/activity';
+import { dueCount, formatDueIn, nextDueMs, setMastery, type SrsState } from '../engine/srs';
 import { StudyHeatmap } from '../components/StudyHeatmap';
 import { PlusIcon, LightbulbIcon, FlameIcon, BiotechIcon, PsychologyIcon, MenuBookIcon } from '../components/icons';
 
@@ -79,6 +80,30 @@ export default function Dashboard() {
   const [editingName, setEditingName] = useState(false);
   const [studySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
   const [activity] = useLocalStorage<ActivityState>('lumina.activity', EMPTY_ACTIVITY);
+  const [srs] = useLocalStorage<SrsState>('lumina.srs', {});
+
+  /** What's ready to review right now, across every set. */
+  const dueBySet = useMemo(() => {
+    const now = Date.now();
+    return studySets
+      .map((set) => ({ set, due: dueCount(set, srs, now) }))
+      .filter((row) => row.due > 0)
+      .sort((a, b) => b.due - a.due);
+  }, [studySets, srs]);
+
+  const totalDue = useMemo(() => dueBySet.reduce((n, r) => n + r.due, 0), [dueBySet]);
+
+  /**
+   * Mastery is read from the schedule, not from the stored field — a set that
+   * was never reviewed must never display progress somebody didn't earn.
+   */
+  const masteryOf = useCallback((s: StudySet) => setMastery(s, srs), [srs]);
+
+  /** Soonest upcoming review when nothing is due — null if any set is unstudied. */
+  const soonest = useMemo(() => {
+    const times = studySets.map((s) => nextDueMs(s, srs)).filter((t): t is number => t !== null);
+    return times.length === studySets.length && times.length > 0 ? Math.min(...times) : null;
+  }, [studySets, srs]);
 
   const streak = useMemo(() => currentStreak(activity), [activity]);
   const weeklyProgress = useMemo(() => weeklyGoalProgress(activity, WEEKLY_GOAL), [activity]);
@@ -131,6 +156,50 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-gutter lg:grid-cols-12">
         {/* Left column */}
         <div className="flex flex-col gap-stack-md lg:col-span-8">
+          {/* Due Today — the first question a spaced-repetition app should answer */}
+          <section className="rounded-xl border border-surface-variant bg-surface-container-lowest p-6 shadow-card">
+            <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className="font-display text-title-lg text-on-surface">Due Today</h3>
+              <span className="font-label-sm text-label-sm text-on-surface-variant">
+                {totalDue > 0
+                  ? `${totalDue} ${totalDue === 1 ? 'card' : 'cards'} ready`
+                  : soonest !== null
+                    ? `Next review ${formatDueIn(soonest, Date.now())}`
+                    : 'Nothing scheduled yet'}
+              </span>
+            </div>
+
+            {dueBySet.length > 0 ? (
+              <ul className="flex flex-col gap-2">
+                {dueBySet.map(({ set, due }) => (
+                  <li key={set.id}>
+                    <Link
+                      to={`/study/${set.id}/flashcards`}
+                      className="pressable flex items-center justify-between gap-4 rounded-lg border border-surface-variant bg-surface-container-low px-4 py-3 transition-colors hover:border-secondary"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate font-label-lg text-label-lg text-on-surface">
+                          {set.title}
+                        </span>
+                        <span className="block font-label-sm text-label-sm text-on-surface-variant">
+                          {set.subject}
+                        </span>
+                      </span>
+                      <span className="shrink-0 rounded-full bg-secondary px-3 py-1 font-label-sm text-label-sm font-bold text-on-secondary">
+                        {due} due
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="font-body text-body-md text-on-surface-variant">
+                You&apos;re all caught up. Reviews reappear as they come due — that spacing is what moves
+                them into long-term memory.
+              </p>
+            )}
+          </section>
+
           <div className="flex items-center justify-between">
             <h3 className="font-display text-title-lg text-on-surface">Recent Study Sets</h3>
             <Link to="/study" className="font-label-lg text-label-lg text-primary hover:text-surface-tint">
@@ -141,7 +210,8 @@ export default function Dashboard() {
           <div className="stagger grid grid-cols-1 gap-6 sm:grid-cols-2">
             {studySets.map((set) => {
               const Icon = subjectIcon(set.subject);
-              const barColor = set.mastery >= 70 ? 'bg-secondary' : 'bg-primary';
+              const mastery = masteryOf(set);
+              const barColor = mastery >= 70 ? 'bg-secondary' : 'bg-primary';
               return (
                 <Link
                   key={set.id}
@@ -163,10 +233,10 @@ export default function Dashboard() {
                   <div className="space-y-2">
                     <div className="flex justify-between font-label-sm text-label-sm text-on-surface-variant">
                       <span>Mastery</span>
-                      <span>{set.mastery}%</span>
+                      <span>{mastery}%</span>
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-surface-container-high">
-                      <div className={`h-full rounded-full ${barColor}`} style={{ width: `${set.mastery}%` }} />
+                      <div className={`h-full rounded-full ${barColor}`} style={{ width: `${mastery}%` }} />
                     </div>
                   </div>
                 </Link>
@@ -186,7 +256,7 @@ export default function Dashboard() {
           {/* Lumina Insight — honest: surfaces the weakest set, not an invented claim. */}
           {(() => {
             const weakest = studySets.length
-              ? [...studySets].sort((a, b) => a.mastery - b.mastery)[0]
+              ? [...studySets].sort((a, b) => masteryOf(a) - masteryOf(b))[0]
               : null;
             if (!weakest) return null;
             return (
@@ -197,7 +267,7 @@ export default function Dashboard() {
                 <div>
                   <h4 className="mb-2 font-display text-title-lg text-on-surface">Lumina Insight</h4>
                   <p className="font-body text-body-md text-on-surface-variant">
-                    You&apos;re at <span className="font-semibold text-on-surface">{weakest.mastery}%</span> on{' '}
+                    You&apos;re at <span className="font-semibold text-on-surface">{masteryOf(weakest)}%</span> on{' '}
                     <span className="font-semibold text-on-surface">{weakest.title}</span>. A quick review
                     session here would raise your overall mastery the most.
                   </p>

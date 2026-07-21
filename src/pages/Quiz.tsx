@@ -61,9 +61,10 @@ export default function Quiz() {
 
   const next = () => {
     if (index >= set.quiz.length - 1) {
-      const score = Math.round((correctCount / set.quiz.length) * 100);
       setStudySets((sets) =>
-        sets.map((s) => (s.id !== set.id ? s : { ...s, mastery: Math.round((s.mastery + score) / 2) })),
+        // Mastery comes from the flashcard schedule alone; a quiz score must not
+        // inflate it. The quiz still records activity and updates the timestamp.
+        sets.map((s) => (s.id !== set.id ? s : { ...s, lastUpdatedMs: Date.now() })),
       );
       setFinished(true);
       return;

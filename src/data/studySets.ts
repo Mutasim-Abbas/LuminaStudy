@@ -17,7 +17,11 @@ export interface StudySet {
   subject: string;
   title: string;
   description: string;
-  /** 0–100. Recomputed from quiz/flashcard review — not hand-set except on seed. */
+  /**
+   * 0–100, derived from the spaced-repetition schedule by `setMastery` — how
+   * far each card has been spaced out, averaged over the set. Never set by
+   * hand: a number you cannot earn is a number that lies to the learner.
+   */
   mastery: number;
   /** Updated whenever the set is reviewed — powers the "Updated Xh ago" chip. */
   lastUpdatedMs: number;
@@ -31,7 +35,7 @@ export const SEED_STUDY_SETS: StudySet[] = [
     subject: 'Biology',
     title: 'Bio 101: Cell Theory',
     description: 'Reviewing mitochondria, cellular respiration, and mitosis basics.',
-    mastery: 62,
+    mastery: 0,
     lastUpdatedMs: Date.now() - 2 * 60 * 60 * 1000,
     cards: [
       { id: 'c1', front: 'What are the three parts of cell theory?', back: 'All living things are made of cells; the cell is the basic unit of life; all cells come from pre-existing cells.' },
@@ -61,7 +65,7 @@ export const SEED_STUDY_SETS: StudySet[] = [
     subject: 'Psychology',
     title: 'Intro to Psych: Memory',
     description: 'Key concepts: short vs. long-term memory, encoding, retrieval.',
-    mastery: 41,
+    mastery: 0,
     lastUpdatedMs: Date.now() - 24 * 60 * 60 * 1000,
     cards: [
       { id: 'c1', front: 'What is the primary brain region for long-term memory?', back: 'The hippocampus.' },

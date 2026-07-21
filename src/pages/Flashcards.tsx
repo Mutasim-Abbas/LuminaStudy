@@ -1,10 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useStudyTimer } from '../hooks/useStudyTimer';
 import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
 import { EMPTY_ACTIVITY, withCardReviewed, withStudyTime, type ActivityState } from '../engine/activity';
-import { RefreshIcon, CheckCircleIcon, TouchAppIcon } from '../components/icons';
+import {
+  dueCards,
+  formatDueIn,
+  gradeCard,
+  nextDueMs,
+  scheduleKey,
+  setMastery,
+  type Grade,
+  type SrsState,
+} from '../engine/srs';
+import { CheckCircleIcon, TouchAppIcon, TrophyIcon } from '../components/icons';
 
 /** Inline keycap, for teaching the review shortcuts in place. */
 function Kbd({ children }: { children: React.ReactNode }) {
@@ -15,46 +25,104 @@ function Kbd({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** The four grades, in the order they appear on screen and on the number row. */
+const GRADES: { grade: Grade; label: string; hint: string; className: string }[] = [
+  {
+    grade: 'again',
+    label: 'Again',
+    hint: 'Forgot it',
+    className: 'border-2 border-error/60 text-error hover:bg-error/10',
+  },
+  {
+    grade: 'hard',
+    label: 'Hard',
+    hint: 'Struggled',
+    className: 'border-2 border-outline-variant text-on-surface hover:border-primary hover:bg-surface-container-low',
+  },
+  {
+    grade: 'good',
+    label: 'Good',
+    hint: 'Recalled it',
+    className: 'bg-primary text-on-primary hover:bg-primary-container',
+  },
+  {
+    grade: 'easy',
+    label: 'Easy',
+    hint: 'Instant',
+    className: 'bg-secondary text-on-secondary hover:opacity-90',
+  },
+];
+
 export default function Flashcards() {
   const { setId } = useParams();
   const [studySets, setStudySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [srs, setSrs] = useLocalStorage<SrsState>('lumina.srs', {});
   const [, setActivity] = useLocalStorage<ActivityState>('lumina.activity', EMPTY_ACTIVITY);
+
   const set = studySets.find((s) => s.id === setId);
-  const [index, setIndex] = useState(0);
+
+  /** Card ids remaining in this sitting. Built once, then drained. */
+  const [queue, setQueue] = useState<string[]>([]);
   const [flipped, setFlipped] = useState(false);
+  const [reviewed, setReviewed] = useState(0);
+  const builtFor = useRef<string | null>(null);
 
   useStudyTimer((ms) => setActivity((a) => withStudyTime(a, ms)));
 
-  const atEnd = set ? index >= set.cards.length - 1 : false;
-
-  const advance = useCallback(() => {
+  // Build the session queue once per set. Deliberately not reacting to `srs`:
+  // grading rewrites it, and rebuilding mid-session would drop cards underfoot.
+  useEffect(() => {
+    if (!set || builtFor.current === set.id) return;
+    builtFor.current = set.id;
+    setQueue(dueCards(set, srs, Date.now()).map((c) => c.id));
+    setReviewed(0);
     setFlipped(false);
-    if (!atEnd) setIndex((i) => i + 1);
-  }, [atEnd]);
+  }, [set, srs]);
 
-  const markKnown = useCallback(
-    (known: boolean) => {
-      if (!set) return;
-      // Nudge mastery — a small, honest signal, not a fake number.
+  const currentId = queue[0];
+  const card = set?.cards.find((c) => c.id === currentId);
+
+  /** What each button would schedule, so the learner can see the cost. */
+  const previews = useMemo(() => {
+    if (!set || !card) return null;
+    const now = Date.now();
+    const prev = srs[scheduleKey(set.id, card.id)];
+    return Object.fromEntries(
+      GRADES.map(({ grade }) => {
+        const next = gradeCard(prev, grade, now);
+        return [grade, formatDueIn(next.dueMs, now)];
+      }),
+    ) as Record<Grade, string>;
+  }, [set, card, srs]);
+
+  const submit = useCallback(
+    (grade: Grade) => {
+      if (!set || !card) return;
+      const now = Date.now();
+      const key = scheduleKey(set.id, card.id);
+      const nextSrs: SrsState = { ...srs, [key]: gradeCard(srs[key], grade, now) };
+
+      setSrs(nextSrs);
+      // Mastery is derived from the schedule, never nudged by hand.
       setStudySets((sets) =>
-        sets.map((s) =>
-          s.id !== set.id ? s : { ...s, mastery: Math.max(0, Math.min(100, s.mastery + (known ? 3 : -2))) },
-        ),
+        sets.map((s) => (s.id !== set.id ? s : { ...s, mastery: setMastery(s, nextSrs), lastUpdatedMs: now })),
       );
       setActivity((a) => withCardReviewed(a));
-      advance();
+
+      setFlipped(false);
+      setReviewed((n) => n + 1);
+      // A forgotten card comes back at the end of this sitting.
+      setQueue(([head, ...rest]) => (grade === 'again' ? [...rest, head] : rest));
     },
-    [set, advance, setStudySets, setActivity],
+    [set, card, srs, setSrs, setStudySets, setActivity],
   );
 
-  // Keyboard-first review: Space/Enter flips, then 1 = needs work, 2 = known.
-  // Arrow keys mirror the on-screen button order for muscle memory.
-  // NB: declared before the early return below — hooks must run unconditionally.
+  // Keyboard-first review: Space flips, then 1-4 grade the card.
+  // Declared before any early return — hooks must run unconditionally.
   useEffect(() => {
-    if (!set) return;
+    if (!card) return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      // Never hijack typing in a field.
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
 
       if (e.key === ' ' || e.key === 'Enter') {
@@ -63,17 +131,15 @@ export default function Flashcards() {
         return;
       }
       if (!flipped) return;
-      if (e.key === '1' || e.key === 'ArrowLeft') {
+      const index = Number(e.key) - 1;
+      if (index >= 0 && index < GRADES.length) {
         e.preventDefault();
-        markKnown(false);
-      } else if (e.key === '2' || e.key === 'ArrowRight') {
-        e.preventDefault();
-        markKnown(true);
+        submit(GRADES[index].grade);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [set, flipped, markKnown]);
+  }, [card, flipped, submit]);
 
   if (!set) {
     return (
@@ -86,31 +152,70 @@ export default function Flashcards() {
     );
   }
 
-  const card = set.cards[index];
+  // ---------------- Session finished ----------------
+  if (!card) {
+    const upcoming = nextDueMs(set, srs);
+    return (
+      <div className="mx-auto flex w-full max-w-xl flex-col items-center px-4 py-16 text-center">
+        <div className="rise-in grid h-20 w-20 place-items-center rounded-full bg-secondary-container text-on-secondary-container">
+          <TrophyIcon className="h-10 w-10" />
+        </div>
+        <h2 className="mt-6 font-display text-headline-md text-on-surface">
+          {reviewed > 0 ? 'Session complete' : 'Nothing due right now'}
+        </h2>
+        <p className="mt-2 max-w-md font-body text-body-lg text-on-surface-variant">
+          {reviewed > 0
+            ? `You reviewed ${reviewed} ${reviewed === 1 ? 'card' : 'cards'}. Spacing them out is what makes them stick.`
+            : 'Every card in this set is scheduled ahead. Come back when they are due.'}
+        </p>
+        {upcoming !== null && (
+          <p className="mt-3 font-label-lg text-label-lg text-primary">
+            Next review {formatDueIn(upcoming, Date.now())}
+          </p>
+        )}
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+          <Link
+            to={`/study/${set.id}`}
+            className="pressable rounded-lg bg-primary px-8 py-3 font-label-lg text-label-lg text-on-primary"
+          >
+            Back to set
+          </Link>
+          <Link
+            to={`/study/${set.id}/quiz`}
+            className="pressable rounded-lg border-2 border-outline-variant px-8 py-3 font-label-lg text-label-lg text-on-surface hover:border-primary"
+          >
+            Take the quiz
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------- Reviewing ----------------
+  const remaining = queue.length;
+  const total = reviewed + remaining;
+  const progress = total === 0 ? 0 : (reviewed / total) * 100;
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col items-center px-4 pb-stack-xl pt-stack-md sm:px-6">
-      <Link
-        to={`/study/${set.id}`}
-        className="mb-6 self-start font-label-lg text-label-lg font-bold text-primary"
-      >
+      <Link to={`/study/${set.id}`} className="mb-6 self-start font-label-lg text-label-lg font-bold text-primary">
         {set.title}
       </Link>
 
       {/* Progress */}
       <div className="mb-8 flex w-full flex-col items-center gap-3">
         <span className="font-label-lg text-label-lg text-on-surface-variant">
-          Card {index + 1} of {set.cards.length}
+          {remaining} {remaining === 1 ? 'card' : 'cards'} to go · {reviewed} reviewed
         </span>
         <div className="h-2 w-full overflow-hidden rounded-full bg-surface-variant">
           <div
             className="h-full rounded-full bg-primary transition-[width] duration-base"
-            style={{ width: `${((index + 1) / set.cards.length) * 100}%` }}
+            style={{ width: `${progress}%` }}
           />
         </div>
       </div>
 
-      {/* Flip card — real 3D rotation on the Y axis, matching the reference exactly */}
+      {/* Flip card — real 3D rotation on the Y axis */}
       <div className={`flashcard perspective-1000 aspect-[16/9] w-full cursor-pointer ${flipped ? 'is-flipped' : ''}`}>
         <button
           type="button"
@@ -139,40 +244,35 @@ export default function Flashcards() {
         </button>
       </div>
 
-      {/* Actions */}
+      {/* Grading */}
       {flipped ? (
-        <div className="mt-10 flex flex-col items-center gap-4">
-        <div className="flex items-center gap-6">
-          <button
-            type="button"
-            onClick={() => markKnown(false)}
-            className="pressable flex items-center gap-2 rounded-lg border-2 border-outline-variant px-8 py-4 font-label-lg text-label-lg text-on-surface transition-all hover:border-primary hover:bg-surface-container-low"
-          >
-            <RefreshIcon className="h-5 w-5" />
-            Need Review
-          </button>
-          <button
-            type="button"
-            onClick={() => markKnown(true)}
-            className="pressable flex items-center gap-2 rounded-lg bg-primary px-8 py-4 font-label-lg text-label-lg text-on-primary shadow-sm hover:bg-primary-container"
-          >
-            Got It
-            <CheckCircleIcon className="h-5 w-5" />
-          </button>
+        <div className="mt-10 flex w-full flex-col items-center gap-4">
+          <div className="grid w-full grid-cols-2 gap-3 sm:grid-cols-4">
+            {GRADES.map(({ grade, label, hint, className }, i) => (
+              <button
+                key={grade}
+                type="button"
+                onClick={() => submit(grade)}
+                className={`pressable flex flex-col items-center gap-0.5 rounded-lg px-4 py-3 font-label-lg text-label-lg transition-all ${className}`}
+              >
+                <span className="flex items-center gap-2">
+                  {label}
+                  {grade === 'good' && <CheckCircleIcon className="h-4 w-4" />}
+                </span>
+                <span className="font-label-sm text-[11px] opacity-80">
+                  {hint} · {previews?.[grade]}
+                </span>
+                <span className="font-mono text-[10px] opacity-60">{i + 1}</span>
+              </button>
+            ))}
           </div>
           <p className="font-label-sm text-label-sm text-on-surface-variant">
-            Press <Kbd>1</Kbd> to review again · <Kbd>2</Kbd> if you got it
+            Press <Kbd>1</Kbd>–<Kbd>4</Kbd> to grade — the harder it was, the sooner it comes back
           </p>
         </div>
       ) : (
         <p className="mt-10 font-label-sm text-label-sm text-on-surface-variant">
           Press <Kbd>Space</Kbd> to flip the card
-        </p>
-      )}
-
-      {atEnd && (
-        <p className="mt-6 font-body text-body-md text-on-surface-variant">
-          {flipped ? 'Last card — mark it to finish this set.' : 'That was the last card.'}
         </p>
       )}
     </div>

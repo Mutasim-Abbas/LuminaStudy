@@ -1,11 +1,13 @@
 import { Link, useParams } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
+import { dueCount, formatDueIn, nextDueMs, setMastery, type SrsState } from '../engine/srs';
 import { LibraryIcon, QuizIcon } from '../components/icons';
 
 export default function StudySetDetail() {
   const { setId } = useParams();
   const [studySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [srs] = useLocalStorage<SrsState>('lumina.srs', {});
   const set = studySets.find((s) => s.id === setId);
 
   if (!set) {
@@ -19,7 +21,12 @@ export default function StudySetDetail() {
     );
   }
 
-  const barColor = set.mastery >= 70 ? 'bg-secondary' : 'bg-primary';
+  // Derived from the schedule so an unreviewed set can never show progress.
+  const mastery = setMastery(set, srs);
+  const barColor = mastery >= 70 ? 'bg-secondary' : 'bg-primary';
+  const now = Date.now();
+  const due = dueCount(set, srs, now);
+  const upcoming = nextDueMs(set, srs);
 
   return (
     <div className="mx-auto w-full max-w-[700px] px-4 pb-stack-xl pt-stack-md sm:px-6">
@@ -31,10 +38,10 @@ export default function StudySetDetail() {
 
       <div className="mt-6 flex items-center gap-3">
         <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-container-high">
-          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${set.mastery}%` }} />
+          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${mastery}%` }} />
         </div>
         <span className="font-label-lg text-label-lg font-semibold text-on-surface">
-          {set.mastery}% mastery
+          {mastery}% mastery
         </span>
       </div>
 
@@ -43,10 +50,21 @@ export default function StudySetDetail() {
           to={`/study/${set.id}/flashcards`}
           className="pressable rounded-xl border border-surface-variant bg-surface-container-lowest p-5 shadow-card"
         >
-          <LibraryIcon className="mb-3 h-6 w-6 text-primary" />
+          <div className="mb-3 flex items-center justify-between">
+            <LibraryIcon className="h-6 w-6 text-primary" />
+            {due > 0 && (
+              <span className="rounded-full bg-secondary px-2.5 py-0.5 font-label-sm text-label-sm font-bold text-on-secondary">
+                {due} due
+              </span>
+            )}
+          </div>
           <h2 className="font-display text-title-lg text-on-surface">Flashcards</h2>
           <p className="mt-1 font-body text-body-md text-on-surface-variant">
-            {set.cards.length} cards to flip through and review.
+            {due > 0
+              ? `${due} of ${set.cards.length} ${due === 1 ? 'card is' : 'cards are'} ready to review.`
+              : upcoming !== null
+                ? `All caught up — next review ${formatDueIn(upcoming, now)}.`
+                : `${set.cards.length} cards to flip through and review.`}
           </p>
         </Link>
         <Link

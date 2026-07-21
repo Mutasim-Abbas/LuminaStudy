@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { setMastery, type SrsState } from '../engine/srs';
 import { SEED_STUDY_SETS, relativeTime, type StudySet } from '../data/studySets';
 import { PlusIcon, BiotechIcon, PsychologyIcon, MenuBookIcon } from '../components/icons';
 
@@ -30,6 +31,7 @@ function useFolders(studySets: StudySet[]) {
 
 export default function StudySets() {
   const [studySets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [srs] = useLocalStorage<SrsState>('lumina.srs', {});
   const folders = useFolders(studySets);
 
   return (
@@ -84,7 +86,8 @@ export default function StudySets() {
           <div className="stagger flex flex-col gap-3">
             {studySets.map((set) => {
               const Icon = subjectIcon(set.subject);
-              const barColor = set.mastery >= 70 ? 'bg-secondary' : 'bg-primary';
+              const mastery = setMastery(set, srs);
+              const barColor = mastery >= 70 ? 'bg-secondary' : 'bg-primary';
               return (
                 <Link
                   key={set.id}
@@ -111,10 +114,10 @@ export default function StudySets() {
                     <div className="flex-1">
                       <div className="mb-1 flex justify-between font-label-sm text-label-sm text-on-surface-variant">
                         <span>Mastery</span>
-                        <span>{set.mastery}%</span>
+                        <span>{mastery}%</span>
                       </div>
                       <div className="h-2 w-full overflow-hidden rounded-full bg-surface-container-high">
-                        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${set.mastery}%` }} />
+                        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${mastery}%` }} />
                       </div>
                     </div>
                   </div>
