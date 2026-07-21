@@ -1,7 +1,11 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import jwt from 'jsonwebtoken';
 import { buildApp } from '../app.js';
 import { db } from '../db.js';
+
+/** Must match the JWT_SECRET injected by vitest.config.ts. */
+const TEST_SECRET = 'test-only-secret-not-used-anywhere-near-production';
 
 /**
  * Auth + per-user isolation. The isolation tests matter most: they are what
@@ -11,7 +15,10 @@ import { db } from '../db.js';
 let app: FastifyInstance;
 
 beforeEach(async () => {
-  db.exec('DELETE FROM study_sets; DELETE FROM users;');
+  // Every table, not just the obvious two: leftover login_attempts or ai_usage
+  // rows leak failure counts and quota between tests, which silently changes
+  // what later assertions are actually measuring.
+  db.exec('DELETE FROM study_sets; DELETE FROM ai_usage; DELETE FROM login_attempts; DELETE FROM users;');
   if (!app) app = await buildApp();
 });
 
@@ -149,6 +156,191 @@ describe('session', () => {
     const res = await app.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie } });
     const cleared = res.cookies.find((c) => c.name === 'lumina_session');
     expect(cleared?.value).toBe('');
+  });
+});
+
+describe('sign-in lockout', () => {
+  /** Burn `n` failed attempts against an email. */
+  async function fail(n: number, email = CREDS.email) {
+    let last;
+    for (let i = 0; i < n; i++) {
+      last = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email, password: 'definitely wrong password' },
+      });
+    }
+    return last!;
+  }
+
+  it('counts down the attempts remaining', async () => {
+    await signup();
+    expect((await fail(1)).json().attemptsRemaining).toBe(4);
+    expect((await fail(1)).json().attemptsRemaining).toBe(3);
+  });
+
+  it('locks the account after 5 failures', async () => {
+    await signup();
+    await fail(5);
+    const res = await fail(1);
+    expect(res.statusCode).toBe(429);
+    expect(res.json().error).toBe('too_many_attempts');
+    expect(res.json().message).toMatch(/minute/);
+  });
+
+  it('rejects even the CORRECT password while locked', async () => {
+    // The point of a lockout: guessing right on attempt 6 must not help.
+    await signup();
+    await fail(5);
+    const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS });
+    expect(res.statusCode).toBe(429);
+  });
+
+  it('unlocks roughly 15 minutes after the oldest failure', async () => {
+    await signup();
+    await fail(5);
+    // Age the recorded failures past the window.
+    db.exec(`UPDATE login_attempts SET created_at = created_at - ${16 * 60 * 1000}`);
+    const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it('clears the count after a successful sign-in', async () => {
+    await signup();
+    await fail(3);
+    await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS });
+    expect((await fail(1)).json().attemptsRemaining).toBe(4);
+  });
+
+  it('locks unknown emails too, so the counter reveals nothing', async () => {
+    const res = await fail(6, 'ghost@example.com');
+    expect(res.statusCode).toBe(429);
+  });
+});
+
+describe('AI generation is gated', () => {
+  const material = { text: 'x'.repeat(200) };
+
+  it('requires a session — the endpoint costs real money', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/generate', payload: material });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('reports the quota for a signed-in user', async () => {
+    const cookie = cookieFrom(await signup());
+    const res = await app.inject({ method: 'GET', url: '/api/generate/quota', headers: { cookie } });
+    expect(res.json()).toMatchObject({ used: 0, limit: 3, remaining: 3 });
+  });
+
+  it('refuses a 4th generation in 24 hours with 402, not 429', async () => {
+    const res = await signup();
+    const cookie = cookieFrom(res);
+    const userId = res.json().user.id;
+    // Simulate three generations already used today.
+    for (let i = 0; i < 3; i++) {
+      db.prepare('INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)').run(
+        `u${i}`,
+        userId,
+        Date.now(),
+      );
+    }
+    const gen = await app.inject({
+      method: 'POST',
+      url: '/api/generate',
+      headers: { cookie },
+      payload: material,
+    });
+    expect(gen.statusCode).toBe(402);
+    expect(gen.json().error).toBe('quota_exceeded');
+    expect(gen.json().message).toMatch(/free study sets/);
+  });
+
+  it('lets the quota slide as old uses age out of the window', async () => {
+    const res = await signup();
+    const cookie = cookieFrom(res);
+    const userId = res.json().user.id;
+    db.prepare('INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)').run(
+      'old',
+      userId,
+      Date.now() - 25 * 60 * 60 * 1000, // yesterday
+    );
+    const quota = await app.inject({
+      method: 'GET',
+      url: '/api/generate/quota',
+      headers: { cookie },
+    });
+    expect(quota.json().remaining).toBe(3);
+  });
+
+  it('counts quota per account, not globally', async () => {
+    const a = await signup({ email: 'a@example.com', password: 'password one!!' });
+    const b = await signup({ email: 'b@example.com', password: 'password two!!' });
+    for (let i = 0; i < 3; i++) {
+      db.prepare('INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)').run(
+        `x${i}`,
+        a.json().user.id,
+        Date.now(),
+      );
+    }
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/generate/quota',
+      headers: { cookie: cookieFrom(b) },
+    });
+    expect(res.json().remaining).toBe(3);
+  });
+});
+
+describe('token attacks', () => {
+  it('rejects an expired but validly signed token', async () => {
+    const expired = jwt.sign({ sub: 'someone', email: 'a@b.c' }, TEST_SECRET, {
+      algorithm: 'HS256',
+      expiresIn: '-1h',
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: `lumina_session=${expired}` },
+    });
+    expect(res.json().user).toBeNull();
+  });
+
+  it('rejects an unsigned "alg: none" token', async () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+    const body = Buffer.from(JSON.stringify({ sub: 'attacker', email: 'evil@example.com' })).toString(
+      'base64url',
+    );
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: `lumina_session=${header}.${body}.` },
+    });
+    expect(res.json().user).toBeNull();
+  });
+
+  it('rejects a token signed with the wrong secret', async () => {
+    const forged = jwt.sign({ sub: 'attacker', email: 'evil@example.com' }, 'not-the-real-secret', {
+      algorithm: 'HS256',
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: `lumina_session=${forged}` },
+    });
+    expect(res.json().user).toBeNull();
+  });
+
+  it('does not accept an expired token on a protected route either', async () => {
+    const expired = jwt.sign({ sub: 'someone', email: 'a@b.c' }, TEST_SECRET, {
+      algorithm: 'HS256',
+      expiresIn: '-1h',
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/sets',
+      headers: { cookie: `lumina_session=${expired}` },
+    });
+    expect(res.statusCode).toBe(401);
   });
 });
 

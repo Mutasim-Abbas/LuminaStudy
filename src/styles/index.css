@@ -30,58 +30,62 @@
 /* ------------------------------------------------------------------ */
 /* Entrance motion — page/route transitions, staggered card reveals.   */
 /* ------------------------------------------------------------------ */
-@keyframes rise-blur-in {
+/**
+ * Entrance motion is deliberately limited to `opacity` and `transform`. Those
+ * two are the only properties the browser can animate on the compositor without
+ * repainting; an earlier version also animated `filter: blur()`, which forced a
+ * full-page repaint every frame and made route changes visibly stutter.
+ */
+@keyframes rise-in {
   from {
     opacity: 0;
-    filter: blur(6px);
-    transform: translateY(14px);
+    transform: translate3d(0, 12px, 0);
   }
   to {
     opacity: 1;
-    filter: blur(0);
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 .rise-in {
-  animation: rise-blur-in 0.5s var(--ease-out) both;
+  animation: rise-in 0.34s var(--ease-out) both;
 }
 
 @keyframes page-enter {
   from {
     opacity: 0;
-    filter: blur(4px);
-    transform: translateY(8px);
+    transform: translate3d(0, 6px, 0);
   }
   to {
     opacity: 1;
-    filter: blur(0);
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 .page-enter {
-  animation: page-enter 0.4s var(--ease-out) both;
+  animation: page-enter 0.22s var(--ease-out) both;
 }
 
+/* Card reveals. Delays are tightened so the last card isn't still arriving
+   long after the page has settled. */
 .stagger > * {
-  animation: rise-blur-in 0.5s var(--ease-out) both;
+  animation: rise-in 0.34s var(--ease-out) both;
 }
 .stagger > *:nth-child(1) {
-  animation-delay: 40ms;
+  animation-delay: 20ms;
 }
 .stagger > *:nth-child(2) {
-  animation-delay: 100ms;
+  animation-delay: 55ms;
 }
 .stagger > *:nth-child(3) {
-  animation-delay: 160ms;
+  animation-delay: 90ms;
 }
 .stagger > *:nth-child(4) {
-  animation-delay: 220ms;
+  animation-delay: 125ms;
 }
 .stagger > *:nth-child(5) {
-  animation-delay: 280ms;
+  animation-delay: 160ms;
 }
 .stagger > *:nth-child(6) {
-  animation-delay: 340ms;
+  animation-delay: 195ms;
 }
 
 .pressable {
@@ -137,4 +141,10 @@
   .flashcard-inner {
     transition: none;
   }
+}
+
+/* The flip is the one place a 3D transform is worth promoting to its own
+   layer; without this the card re-rasterises mid-rotation on weaker GPUs. */
+.flashcard-inner {
+  will-change: transform;
 }

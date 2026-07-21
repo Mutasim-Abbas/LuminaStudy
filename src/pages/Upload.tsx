@@ -2,7 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
-import { generateStudySet, getHealth, ApiError, type GeneratedSet, pushSetQuietly } from '../lib/api';
+import {
+  generateStudySet,
+  getHealth,
+  fetchAiQuota,
+  ApiError,
+  type GeneratedSet,
+  type AiQuota,
+  pushSetQuietly,
+} from '../lib/api';
 import {
   UploadFileIcon,
   DocumentIcon,
@@ -13,7 +21,7 @@ import {
   CloseIcon,
 } from '../components/icons';
 
-type Phase = 'idle' | 'analyzing' | 'done' | 'error';
+type Phase = 'idle' | 'analyzing' | 'done' | 'error' | 'quota';
 
 // Shown while the real Gemini request is in flight — perceived progress.
 const GENERATION_STEPS = [
@@ -56,11 +64,17 @@ export default function Upload() {
   const [errorMsg, setErrorMsg] = useState('');
   const [aiEnabled, setAiEnabled] = useState<boolean | null>(null);
   const [result, setResult] = useState<GeneratedSet | null>(null);
+  const [quota, setQuota] = useState<AiQuota | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Check whether the server has a key, so we can guide the user honestly.
   useEffect(() => {
     getHealth().then((h) => setAiEnabled(h.aiEnabled));
+  }, []);
+
+  // How many free generations are left today.
+  useEffect(() => {
+    fetchAiQuota().then(setQuota);
   }, []);
 
   const readTextFile = async (file: File) => {
@@ -98,12 +112,21 @@ export default function Upload() {
       setStepIndex(GENERATION_STEPS.length - 1);
       setResult(gen);
       setPhase('done');
+      void fetchAiQuota().then(setQuota);
     } catch (err) {
       window.clearInterval(iv);
+      // 402 means the free daily allowance is spent — a different situation
+      // from a failure, so it gets its own state rather than an error message.
+      if (err instanceof ApiError && err.status === 402) {
+        void fetchAiQuota().then(setQuota);
+        setErrorMsg(err.message);
+        setPhase('quota');
+        return;
+      }
       const msg =
         err instanceof ApiError
           ? err.status === 503
-            ? 'The AI isn’t connected yet — add your Gemini key to the server’s .env file.'
+            ? 'The AI isn’t connected yet — add your Groq key to the server’s .env file.'
             : err.message
           : 'Something went wrong generating your study set.';
       setErrorMsg(msg);
@@ -297,11 +320,50 @@ export default function Upload() {
           </div>
         )}
 
+        {/* Free allowance spent — an upgrade prompt, not an error */}
+        {phase === 'quota' && (
+          <div className="rise-in border-t border-surface-variant px-stack-md pt-stack-md">
+            <div className="rounded-xl border border-secondary/40 bg-secondary-container/30 p-5">
+              <h3 className="font-display text-title-lg text-on-surface">You&apos;ve used today&apos;s free scans</h3>
+              <p className="mt-2 font-body text-body-md text-on-surface-variant">{errorMsg}</p>
+              <p className="mt-3 font-body text-body-sm text-on-surface-variant">
+                Every account gets {quota?.limit ?? 3} AI study sets a day. Flashcards, quizzes and
+                everything already in your library stay available — only new generation is paused.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Link
+                  to="/create"
+                  className="pressable rounded-lg bg-primary px-5 py-2.5 font-label-lg text-label-lg text-on-primary"
+                >
+                  Build a set by hand
+                </Link>
+                <Link
+                  to="/study"
+                  className="pressable rounded-lg border-2 border-outline-variant px-5 py-2.5 font-label-lg text-label-lg text-on-surface hover:border-primary"
+                >
+                  Review what&apos;s due
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Remaining allowance, shown before they spend one */}
+        {quota && phase !== 'done' && phase !== 'quota' && (
+          <div className="px-stack-md pt-3">
+            <p className="font-label-sm text-label-sm text-on-surface-variant">
+              {quota.remaining > 0
+                ? `${quota.remaining} of ${quota.limit} free AI study sets left today.`
+                : `No free study sets left${quota.resetIn ? ` — resets ${quota.resetIn}` : ''}.`}
+            </p>
+          </div>
+        )}
+
         {/* AI-not-configured hint */}
         {aiEnabled === false && phase !== 'done' && (
           <div className="px-stack-md pt-3">
             <p className="rounded-lg bg-surface-container-low px-3 py-2 font-label-sm text-label-sm text-on-surface-variant">
-              Heads up: the server has no Gemini key yet, so generation will fail until one is added
+              Heads up: the server has no AI key yet, so generation will fail until one is added
               to <code>server/.env</code>.
             </p>
           </div>

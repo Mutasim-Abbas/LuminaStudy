@@ -59,6 +59,8 @@ export async function generateStudySet(input: {
   try {
     res = await fetch('/api/generate', {
       method: 'POST',
+      // The endpoint requires a session now, so the cookie has to ride along.
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     });
@@ -139,6 +141,24 @@ export async function fetchCurrentUser(): Promise<AccountUser | null> {
     return user;
   } catch {
     // Backend down or unreachable — treat as signed out rather than blocking boot.
+    return null;
+  }
+}
+
+export interface AiQuota {
+  used: number;
+  limit: number;
+  remaining: number;
+  resetAtMs: number | null;
+  /** Human phrasing of the wait, e.g. "in 7 hours". Null while under the limit. */
+  resetIn: string | null;
+}
+
+/** Free generations left today. Null if the server can't be reached. */
+export async function fetchAiQuota(): Promise<AiQuota | null> {
+  try {
+    return await request<AiQuota>('/api/generate/quota');
+  } catch {
     return null;
   }
 }

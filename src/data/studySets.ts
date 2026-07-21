@@ -29,6 +29,15 @@ export interface StudySet {
   quiz: QuizQuestion[];
 }
 
+/**
+ * Example content for a brand-new library.
+ *
+ * These ids are templates, not final: `installSeedSets` rewrites them to fresh
+ * UUIDs the first time the app runs. Study-set ids are a global key on the
+ * server, so if every account shipped with a literal `bio-101-cell-theory`,
+ * the first user to sync would claim it and every later user's copy would be
+ * rejected — silently, since the push is fire-and-forget.
+ */
 export const SEED_STUDY_SETS: StudySet[] = [
   {
     id: 'bio-101-cell-theory',
@@ -96,6 +105,23 @@ export const SEED_STUDY_SETS: StudySet[] = [
     ],
   },
 ];
+
+export const STUDY_SETS_KEY = 'lumina.studySets';
+
+/**
+ * Seeds a first-run library with per-install ids. Idempotent: once anything is
+ * stored under STUDY_SETS_KEY — including an empty list — this does nothing, so
+ * it can't resurrect sets the user deleted or clobber a synced library.
+ */
+export function installSeedSets(): void {
+  try {
+    if (localStorage.getItem(STUDY_SETS_KEY) !== null) return;
+    const seeded = SEED_STUDY_SETS.map((set) => ({ ...set, id: crypto.randomUUID() }));
+    localStorage.setItem(STUDY_SETS_KEY, JSON.stringify(seeded));
+  } catch {
+    /* storage unavailable — the app still runs, just without examples */
+  }
+}
 
 /** "2h ago", "1d ago", "Just now" — relative to the set's lastUpdatedMs. */
 export function relativeTime(ms: number | undefined): string {

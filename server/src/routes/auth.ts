@@ -1,8 +1,15 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { env } from '../env.js';
 import { db, type UserRow } from '../db.js';
+import {
+  clearLoginFailures,
+  formatWait,
+  loginLockout,
+  pruneLoginAttempts,
+  recordLoginFailure,
+} from '../lib/limits.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
 import {
   clearSessionCookie,
@@ -35,6 +42,14 @@ const credentials = z.object({
 function publicUser(row: Pick<UserRow, 'id' | 'email'>) {
   return { id: row.id, email: row.email };
 }
+
+/**
+ * A genuine hash of a random secret, computed once at boot and verified against
+ * when the email is unknown. Using a real hash matters: a short placeholder
+ * would finish far faster than a real verification and hand an attacker the
+ * account-existence oracle the constant-time response was meant to close.
+ */
+const DUMMY_HASH = await hashPassword(randomBytes(32).toString('hex'));
 
 export async function authRoutes(app: FastifyInstance) {
   // Brute-force protection on the two endpoints worth attacking. Lifted under
@@ -80,12 +95,37 @@ export async function authRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(401).send(invalid);
 
     const { email, password } = parsed.data;
+    const now = Date.now();
+
+    // Per-account lockout, checked before any password work. This is the control
+    // that survives an attacker rotating IPs, which the per-IP limiter cannot.
+    const lock = loginLockout(email, now);
+    if (lock.locked) {
+      return reply.code(429).send({
+        error: 'too_many_attempts',
+        message: `Too many sign-in attempts. Try again in ${formatWait(lock.retryAtMs!, now)}.`,
+        retryAtMs: lock.retryAtMs,
+      });
+    }
+
     const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
 
     // Hash even when the user is unknown, so response time doesn't reveal it.
-    const stored = row?.password_hash ?? 'scrypt$00$00';
-    const ok = await verifyPassword(password, stored);
-    if (!row || !ok) return reply.code(401).send(invalid);
+    const ok = await verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
+    if (!row || !ok) {
+      recordLoginFailure(email, now);
+      const after = loginLockout(email, now);
+      return reply.code(401).send({
+        ...invalid,
+        // Telling the user how many tries remain is worth more than the little
+        // it reveals: the count is identical for unknown emails, so it still
+        // leaks nothing about whether the account exists.
+        attemptsRemaining: after.remaining,
+      });
+    }
+
+    clearLoginFailures(email);
+    pruneLoginAttempts(now);
 
     const user = { id: row.id, email: row.email };
     setSessionCookie(reply, signSession(user));

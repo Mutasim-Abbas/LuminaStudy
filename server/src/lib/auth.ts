@@ -13,8 +13,20 @@ import { env } from '../env.js';
 
 export const SESSION_COOKIE = 'lumina_session';
 
-const SESSION_DAYS = 30;
+/**
+ * Seven days, not thirty. Sessions are stateless, so a stolen token is valid
+ * until it expires and cannot be revoked — the expiry *is* the containment,
+ * which makes a shorter one meaningfully safer.
+ */
+const SESSION_DAYS = 7;
 const SESSION_MAX_AGE_S = SESSION_DAYS * 24 * 60 * 60;
+
+/**
+ * Pinned explicitly rather than left to the library's defaults. An unpinned
+ * verifier is the root of the classic JWT algorithm-confusion attacks, where a
+ * token claiming `alg: none` or a different family is accepted.
+ */
+const ALGORITHM = 'HS256' as const;
 
 export interface SessionUser {
   id: string;
@@ -30,6 +42,7 @@ declare module 'fastify' {
 
 export function signSession(user: SessionUser): string {
   return jwt.sign({ sub: user.id, email: user.email }, env.JWT_SECRET, {
+    algorithm: ALGORITHM,
     expiresIn: `${SESSION_DAYS}d`,
   });
 }
@@ -38,7 +51,7 @@ export function signSession(user: SessionUser): string {
 export function verifySession(token: string | undefined): SessionUser | null {
   if (!token) return null;
   try {
-    const payload = jwt.verify(token, env.JWT_SECRET);
+    const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: [ALGORITHM] });
     if (typeof payload === 'string' || !payload.sub) return null;
     return { id: String(payload.sub), email: String((payload as { email?: string }).email ?? '') };
   } catch {

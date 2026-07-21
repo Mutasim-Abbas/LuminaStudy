@@ -8,7 +8,7 @@ import {
   syncCloudSets,
   type AccountUser,
 } from '../lib/api';
-import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
+import { SEED_STUDY_SETS, STUDY_SETS_KEY, installSeedSets, type StudySet } from '../data/studySets';
 
 /**
  * Account state, plus the one-time reconciliation that happens at sign-in.
@@ -18,8 +18,6 @@ import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
  * whatever is local into the account and then adopts the server's merged view,
  * so work created while signed out is never silently dropped.
  */
-
-const SETS_KEY = 'lumina.studySets';
 
 interface AuthValue {
   user: AccountUser | null;
@@ -36,7 +34,7 @@ const AuthContext = createContext<AuthValue | null>(null);
 
 function readLocalSets(): StudySet[] {
   try {
-    const raw = localStorage.getItem(SETS_KEY);
+    const raw = localStorage.getItem(STUDY_SETS_KEY);
     return raw ? (JSON.parse(raw) as StudySet[]) : [];
   } catch {
     return [];
@@ -45,7 +43,7 @@ function readLocalSets(): StudySet[] {
 
 function writeLocalSets(sets: StudySet[]) {
   try {
-    localStorage.setItem(SETS_KEY, JSON.stringify(sets));
+    localStorage.setItem(STUDY_SETS_KEY, JSON.stringify(sets));
   } catch {
     /* storage unavailable — the session still works, it just won't persist */
   }
@@ -88,11 +86,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const reconcile = useCallback(async () => {
     const local = localSetsWorthKeeping();
     const merged = local.length > 0 ? await syncCloudSets(local) : await fetchCloudSets();
+
     if (merged.length > 0) {
       writeLocalSets(merged);
-      // The pages read study sets through useLocalStorage, which only re-reads
-      // on mount, so a reload is the honest way to show the merged library.
-      window.location.reload();
+    } else {
+      // A brand-new account with nothing to adopt: start it on fresh examples
+      // rather than an empty library. Clearing first means the seeds are
+      // regenerated with ids unique to this install.
+      localStorage.removeItem(STUDY_SETS_KEY);
+      installSeedSets();
     }
   }, []);
 
@@ -127,7 +129,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await apiSignOut();
       setUser(null);
-      // Leave the local copy in place: signing out shouldn't feel like deletion.
+      /**
+       * Wipe the local cache on the way out. Now that an account is required,
+       * whatever is on screen belongs to the account that just left — and on a
+       * shared or library computer the next person to sign in would otherwise
+       * inherit it *and* push it into their own account on reconcile. The data
+       * is safe on the server; this copy is only a cache.
+       */
+      localStorage.removeItem(STUDY_SETS_KEY);
+      localStorage.removeItem('lumina.srs');
+      localStorage.removeItem('lumina.activity');
+      localStorage.removeItem('lumina.userName');
     } finally {
       setBusy(false);
     }

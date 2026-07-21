@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { ApiError } from '../lib/api';
 import { LuminaMark } from '../components/LuminaMark';
@@ -15,6 +15,9 @@ export default function SignIn() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
+  // RequireAuth stashes the page it intercepted so sign-in can land there.
+  const from = (location.state as { from?: string } | null)?.from ?? '/';
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -22,7 +25,7 @@ export default function SignIn() {
     try {
       if (mode === 'signup') await signUp(email, password);
       else await signIn(email, password);
-      navigate('/');
+      navigate(from, { replace: true });
     } catch (err) {
       setError(
         err instanceof ApiError
@@ -38,7 +41,7 @@ export default function SignIn() {
   // Already signed in — offer the way out rather than a pointless second form.
   if (user) {
     return (
-      <div className="mx-auto w-full max-w-md px-4 py-16 text-center">
+      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-16 text-center">
         <LuminaMark size={44} />
         <h1 className="mt-6 font-display text-headline-md text-on-surface">You&apos;re signed in</h1>
         <p className="mt-2 font-body text-body-lg text-on-surface-variant">{user.email}</p>
@@ -66,7 +69,7 @@ export default function SignIn() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-md px-4 py-12 sm:py-16">
+    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-12">
       <div className="flex flex-col items-center text-center">
         <LuminaMark size={44} />
         <h1 className="mt-5 font-display text-headline-md text-on-surface">
@@ -137,10 +140,7 @@ export default function SignIn() {
       </p>
 
       <p className="mt-8 text-center font-label-sm text-label-sm text-on-surface-variant">
-        You can keep using Lumina without an account — your work stays on this device.{' '}
-        <Link to="/" className="text-primary hover:underline">
-          Continue without signing in
-        </Link>
+        An account keeps your study sets, schedule and progress in sync across every device you use.
       </p>
     </div>
   );

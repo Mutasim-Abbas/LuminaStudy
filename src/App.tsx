@@ -1,6 +1,7 @@
 import { lazy } from 'react';
 import { HashRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './app/Layout';
+import { RequireAuth } from './app/RequireAuth';
 import { AuthProvider } from './hooks/useAuth';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -20,7 +21,17 @@ export default function App() {
     <AuthProvider>
       <HashRouter>
         <Routes>
-          <Route element={<Layout />}>
+          {/* The only route reachable signed out — and it renders without the
+              app chrome, since there is no app to navigate yet. */}
+          <Route path="/account" element={<SignIn />} />
+
+          <Route
+            element={
+              <RequireAuth>
+                <Layout />
+              </RequireAuth>
+            }
+          >
             <Route path="/" element={<Dashboard />} />
             <Route path="/calculator" element={<GradeCalculator />} />
             <Route path="/planner" element={<DegreePlanner />} />
@@ -30,7 +41,6 @@ export default function App() {
             <Route path="/study/:setId/quiz" element={<Quiz />} />
             <Route path="/upload" element={<Upload />} />
             <Route path="/create" element={<CreateSet />} />
-            <Route path="/account" element={<SignIn />} />
           </Route>
         </Routes>
       </HashRouter>

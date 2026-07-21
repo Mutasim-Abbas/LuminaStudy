@@ -51,6 +51,26 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_study_sets_user ON study_sets(user_id, updated_at DESC);
+
+  -- One row per AI generation, used to enforce the free daily quota. Kept as an
+  -- append-only log rather than a counter so the window can slide (and so usage
+  -- stays auditable) instead of resetting on a fixed clock boundary.
+  CREATE TABLE IF NOT EXISTS ai_usage (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_ai_usage_user_time ON ai_usage(user_id, created_at DESC);
+
+  -- Failed sign-in attempts, for per-account lockout. Cleared on success.
+  CREATE TABLE IF NOT EXISTS login_attempts (
+    id         TEXT PRIMARY KEY,
+    email      TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_login_attempts ON login_attempts(email, created_at DESC);
 `);
 
 export interface UserRow {
