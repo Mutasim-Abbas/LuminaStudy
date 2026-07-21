@@ -88,7 +88,7 @@ export default function DegreePlanner() {
       <h1 className="font-display text-headline-lg text-on-surface">Your GPA, semester by semester</h1>
 
       {/* -------- Cumulative summary -------- */}
-      <div className="mt-8 flex flex-wrap items-center gap-8 rounded-xl border border-surface-variant bg-white p-6 shadow-soft">
+      <div className="mt-8 flex flex-wrap items-center gap-8 rounded-xl border border-surface-variant bg-surface-container-lowest p-6 shadow-soft">
         <div>
           <p className="font-label-sm text-label-sm uppercase tracking-wide text-on-surface-variant">
             Cumulative GPA
@@ -108,7 +108,7 @@ export default function DegreePlanner() {
         {semesters.map((sem) => {
           const gpa = semesterGPA(sem);
           return (
-            <section key={sem.id} className="rounded-xl border border-surface-variant bg-white p-5 shadow-card">
+            <section key={sem.id} className="rounded-xl border border-surface-variant bg-surface-container-lowest p-5 shadow-card">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <input
                   aria-label="Semester name"
@@ -203,7 +203,7 @@ export default function DegreePlanner() {
       </button>
 
       {/* -------- What-if -------- */}
-      <section className="mt-8 rounded-xl border border-surface-variant bg-white p-5 shadow-card">
+      <section className="mt-8 rounded-xl border border-surface-variant bg-surface-container-lowest p-5 shadow-card">
         <h2 className="font-display text-title-lg text-on-surface">What if…</h2>
         <p className="mt-1 font-body text-body-md text-on-surface-variant">
           Project your cumulative GPA after a future term.

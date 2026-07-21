@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { LuminaMark } from '../components/LuminaMark';
 import {
   DashboardIcon,
@@ -7,12 +7,15 @@ import {
   CalculatorIcon,
   GraduationCapIcon,
   SearchIcon,
-  BellIcon,
   HelpCircleIcon,
   MenuIcon,
   CloseIcon,
+  SunIcon,
+  MoonIcon,
 } from '../components/icons';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useTheme } from '../hooks/useTheme';
+import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
 
 const LINKS: { to: string; label: string; end?: boolean; icon: (p: { className?: string }) => JSX.Element }[] = [
   { to: '/', label: 'Dashboard', end: true, icon: DashboardIcon },
@@ -60,7 +63,160 @@ export function Sidebar() {
   );
 }
 
-/** Top bar: search + notification/help affordances + your initial. Fixed, offset for the sidebar on desktop. */
+/** Toggles light/dark, labelled by the theme it will switch *to*. */
+function ThemeToggle() {
+  const { resolved, toggle } = useTheme();
+  const goingDark = resolved === 'light';
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-label={goingDark ? 'Switch to dark theme' : 'Switch to light theme'}
+      title={goingDark ? 'Dark theme' : 'Light theme'}
+      className="pressable grid h-9 w-9 place-items-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-primary"
+    >
+      {goingDark ? <MoonIcon className="h-5 w-5" /> : <SunIcon className="h-5 w-5" />}
+    </button>
+  );
+}
+
+/** Case-insensitive match across the fields a student would actually search by. */
+function searchSets(sets: StudySet[], query: string): StudySet[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return sets
+    .filter((s) =>
+      [s.title, s.subject, s.description].some((field) => field?.toLowerCase().includes(q)),
+    )
+    .slice(0, 6);
+}
+
+/**
+ * Search over the user's study sets. Opens on ⌘K / Ctrl+K, navigates with the
+ * arrow keys, commits with Enter — the interaction people expect from a search
+ * field that means it.
+ */
+function SetSearch() {
+  const [sets] = useLocalStorage<StudySet[]>('lumina.studySets', SEED_STUDY_SETS);
+  const [query, setQuery] = useState('');
+  const [active, setActive] = useState(0);
+  const [open, setOpen] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
+
+  const results = useMemo(() => searchSets(sets, query), [sets, query]);
+
+  // ⌘K / Ctrl+K focuses search from anywhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const go = (set: StudySet) => {
+    navigate(`/study/${set.id}`);
+    setQuery('');
+    setOpen(false);
+    inputRef.current?.blur();
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setQuery('');
+      setOpen(false);
+      inputRef.current?.blur();
+      return;
+    }
+    if (!results.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActive((i) => (i + 1) % results.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActive((i) => (i - 1 + results.length) % results.length);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      go(results[active] ?? results[0]);
+    }
+  };
+
+  const showMenu = open && query.trim().length > 0;
+
+  return (
+    <div className="relative max-w-md flex-1">
+      <div className="flex items-center gap-2 rounded-full bg-surface-container-low px-4 py-2 focus-within:ring-2 focus-within:ring-secondary/50">
+        <SearchIcon className="h-5 w-5 shrink-0 text-on-surface-variant" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setActive(0);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          // Delay so a click on a result lands before the menu unmounts.
+          onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+          onKeyDown={onKeyDown}
+          placeholder="Search your study sets…"
+          aria-label="Search study sets"
+          role="combobox"
+          aria-expanded={showMenu}
+          aria-controls="search-results"
+          className="w-full bg-transparent font-body text-body-md text-on-surface placeholder:text-on-surface-variant/70 focus:outline-none"
+        />
+        <kbd className="hidden shrink-0 rounded border border-outline-variant/60 px-1.5 py-0.5 font-mono text-[11px] text-on-surface-variant sm:block">
+          ⌘K
+        </kbd>
+      </div>
+
+      {showMenu && (
+        <div
+          id="search-results"
+          role="listbox"
+          className="rise-in absolute inset-x-0 top-full z-50 mt-2 overflow-hidden rounded-xl border border-surface-variant bg-surface-container-lowest shadow-modal"
+        >
+          {results.length === 0 ? (
+            <p className="px-4 py-3 font-body text-body-sm text-on-surface-variant">
+              No study sets match “{query.trim()}”.
+            </p>
+          ) : (
+            results.map((set, i) => (
+              <button
+                key={set.id}
+                type="button"
+                role="option"
+                aria-selected={i === active}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => go(set)}
+                className={`flex w-full items-center justify-between gap-3 px-4 py-3 text-left transition-colors ${
+                  i === active ? 'bg-surface-container-low' : ''
+                }`}
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-label-lg text-label-lg text-on-surface">{set.title}</span>
+                  <span className="block truncate font-body text-body-sm text-on-surface-variant">
+                    {set.subject} · {set.cards.length} cards
+                  </span>
+                </span>
+                <span className="shrink-0 font-label-sm text-label-sm text-on-surface-variant">{set.mastery}%</span>
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Top bar: search + theme toggle + your initial. Fixed, offset for the sidebar on desktop. */
 export function TopBar() {
   const [name] = useLocalStorage('lumina.userName', '');
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -90,28 +246,15 @@ export function TopBar() {
             {mobileOpen ? <CloseIcon className="h-6 w-6" /> : <MenuIcon className="h-6 w-6" />}
           </button>
 
-          <div className="flex max-w-md flex-1 items-center gap-2 rounded-full bg-surface-container-low px-4 py-2 focus-within:ring-2 focus-within:ring-secondary/50">
-            <SearchIcon className="h-5 w-5 shrink-0 text-on-surface-variant" />
-            <input
-              type="text"
-              placeholder="Search resources…"
-              className="w-full bg-transparent font-body text-body-md text-on-surface placeholder:text-on-surface-variant/70 focus:outline-none"
-            />
-          </div>
+          <SetSearch />
 
-          <div className="flex shrink-0 items-center gap-4 md:gap-6">
+          <div className="flex shrink-0 items-center gap-2 md:gap-3">
+            <ThemeToggle />
             <button
               type="button"
-              aria-label="Notifications"
-              className="relative text-on-surface-variant transition-colors hover:text-secondary"
-            >
-              <BellIcon className="h-5 w-5" />
-              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-error" aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              aria-label="Help"
-              className="hidden text-on-surface-variant transition-colors hover:text-secondary sm:block"
+              aria-label="Keyboard shortcuts and help"
+              title="Press ⌘K to search · Space flips a card · 1-4 answers a quiz"
+              className="pressable hidden h-9 w-9 place-items-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-primary sm:grid"
             >
               <HelpCircleIcon className="h-5 w-5" />
             </button>

@@ -125,7 +125,7 @@ export default function Quiz() {
       <div className="flex flex-col gap-gutter lg:flex-row">
         {/* Question canvas */}
         <div className="flex flex-1 flex-col gap-stack-md">
-          <div className="relative overflow-hidden rounded-xl border border-surface-container border-b-4 border-b-primary bg-white p-8 shadow-card">
+          <div className="relative overflow-hidden rounded-xl border border-surface-container border-b-4 border-b-primary bg-surface-container-lowest p-8 shadow-card">
             <p className="max-w-3xl font-display text-title-lg leading-relaxed text-on-surface">{q.prompt}</p>
           </div>
 
@@ -135,7 +135,7 @@ export default function Quiz() {
               const isPicked = picked === i;
               const answered = picked !== null;
 
-              let card = 'border-surface-container-high bg-white hover:border-secondary hover:bg-surface-container-low';
+              let card = 'border-surface-container-high bg-surface-container-lowest hover:border-secondary hover:bg-surface-container-low';
               let avatar = 'bg-surface-container text-on-surface-variant group-hover:bg-secondary group-hover:text-white';
               if (answered && isCorrect) {
                 card = 'border-secondary bg-surface-container-low shadow-[0_4px_12px_rgba(0,108,83,0.1)]';
@@ -144,7 +144,7 @@ export default function Quiz() {
                 card = 'border-error bg-error-container/40';
                 avatar = 'bg-error text-white';
               } else if (answered) {
-                card = 'border-surface-container-high bg-white opacity-50';
+                card = 'border-surface-container-high bg-surface-container-lowest opacity-50';
               }
 
               return (
@@ -187,7 +187,7 @@ export default function Quiz() {
 
         {/* Question map — read-only progress overview */}
         <aside className="w-full shrink-0 lg:w-72">
-          <div className="sticky top-24 rounded-xl border border-surface-container bg-white p-6 shadow-card">
+          <div className="sticky top-24 rounded-xl border border-surface-container bg-surface-container-lowest p-6 shadow-card">
             <h3 className="mb-4 font-display text-title-lg text-on-surface">Question Map</h3>
             <div className="grid grid-cols-5 gap-2 lg:grid-cols-4">
               {set.quiz.map((_, i) => {
@@ -198,7 +198,7 @@ export default function Quiz() {
                     ? 'bg-primary text-on-primary shadow-md ring-2 ring-primary/20'
                     : state === 'answered'
                       ? 'bg-surface-container-highest text-on-surface-variant'
-                      : 'border border-outline-variant/50 bg-white text-on-surface-variant';
+                      : 'border border-outline-variant/50 bg-surface-container-lowest text-on-surface-variant';
                 return (
                   <div
                     key={i}
@@ -219,7 +219,7 @@ export default function Quiz() {
                 <span>Current</span>
               </div>
               <div className="flex items-center gap-2 font-label-sm text-label-sm text-on-surface-variant">
-                <div className="h-3 w-3 rounded-sm border border-outline-variant/50 bg-white" />
+                <div className="h-3 w-3 rounded-sm border border-outline-variant/50 bg-surface-container-lowest" />
                 <span>Unanswered</span>
               </div>
             </div>

@@ -1,7 +1,13 @@
 /**
  * Lumina Study design tokens — Material Design 3 tonal palette, matching the
- * Stitch "Smart Academic Toolkit" reference exactly (see PLAN.md). Light
- * theme only. Components consume tokens only — never raw hex.
+ * Stitch "Smart Academic Toolkit" reference (see PLAN.md). Components consume
+ * tokens only — never raw hex — which is what lets the dark theme below swap
+ * the whole app by redefining these same variables.
+ *
+ * Theme resolution: a small inline script in index.html stamps
+ * `data-theme="light" | "dark"` on <html> before first paint (resolving the
+ * system preference when the user hasn't chosen), so there is exactly one
+ * source of truth here and no flash of the wrong theme.
  */
 
 :root {
@@ -85,6 +91,72 @@
   --font-display: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
   --font-body: 'Plus Jakarta Sans Variable', 'Inter Variable', system-ui, sans-serif;
   --font-mono: ui-monospace, 'Cascadia Code', monospace;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dark theme — the same M3 roles at dark-scheme tones. Only the values */
+/* change; every component keeps referring to the identical token name. */
+/* ------------------------------------------------------------------ */
+:root[data-theme='dark'] {
+  /* Primary — indigo lifts to a light tone so it reads on dark surfaces */
+  --primary: #c0c1ff;
+  --primary-container: #373a9b;
+  --on-primary: #04006d;
+  --on-primary-container: #e1e0ff;
+  /* "Fixed" roles are theme-independent by design in M3 — unchanged. */
+  --primary-fixed: #e1e0ff;
+  --primary-fixed-dim: #c0c1ff;
+  --on-primary-fixed: #04006d;
+  --on-primary-fixed-variant: #373a9b;
+  --surface-tint: #c0c1ff;
+
+  /* Secondary — mint lifts likewise */
+  --secondary: #72d9b7;
+  --secondary-container: #00513e;
+  --on-secondary: #003828;
+  --on-secondary-container: #8ff6d2;
+  --secondary-fixed: #8ff6d2;
+  --secondary-fixed-dim: #72d9b7;
+  --on-secondary-fixed: #002117;
+  --on-secondary-fixed-variant: #00513e;
+
+  /* Surfaces — near-black with a faint indigo cast, stepping lighter */
+  --background: #131318;
+  --on-background: #e5e1e9;
+  --surface: #131318;
+  --surface-dim: #131318;
+  --surface-bright: #39383f;
+  --surface-container-lowest: #0e0e13;
+  --surface-container-low: #1b1b21;
+  --surface-container: #1f1f25;
+  --surface-container-high: #2a2930;
+  --surface-container-highest: #35343b;
+  --surface-variant: #46464f;
+  --on-surface: #e5e1e9;
+  --on-surface-variant: #c7c5d0;
+
+  --outline: #90909a;
+  --outline-variant: #46464f;
+
+  --error: #ffb4ab;
+  --error-container: #93000a;
+  --on-error: #690005;
+  --on-error-container: #ffdad6;
+
+  /* Elevation reads as depth, not haze — dark themes need true black shadows */
+  --shadow-soft: 0 4px 20px rgb(0 0 0 / 0.45);
+  --shadow-card: 0 4px 20px rgb(0 0 0 / 0.35);
+  --shadow-flashcard: 0 4px 24px rgb(0 0 0 / 0.55);
+  --shadow-modal: 0 12px 48px rgb(0 0 0 / 0.65);
+  --shadow-nav: 4px 0 20px rgb(0 0 0 / 0.5);
+}
+
+/* Let the browser paint form controls, scrollbars and inputs to match. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
 }
 
 @media (prefers-reduced-motion: reduce) {

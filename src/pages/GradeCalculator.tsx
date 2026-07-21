@@ -30,7 +30,7 @@ function ScaleEditor({
   onClose: () => void;
 }) {
   return (
-    <div className="rise-in mt-3 rounded-xl border border-surface-variant bg-white p-4 shadow-card">
+    <div className="rise-in mt-3 rounded-xl border border-surface-variant bg-surface-container-lowest p-4 shadow-card">
       <p className="mb-3 font-body text-body-md text-on-surface-variant">
         Minimum percentage for each letter — edit to match your university.
       </p>
@@ -106,7 +106,7 @@ export default function GradeCalculator() {
       </p>
 
       {/* -------- Graded work -------- */}
-      <section className="mt-8 rounded-xl border border-surface-variant bg-white p-5 shadow-card">
+      <section className="mt-8 rounded-xl border border-surface-variant bg-surface-container-lowest p-5 shadow-card">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="font-display text-title-lg text-on-surface">Your grades so far</h2>
           <span
@@ -185,7 +185,7 @@ export default function GradeCalculator() {
       </section>
 
       {/* -------- What's left -------- */}
-      <section className="mt-4 rounded-xl border border-surface-variant bg-white p-5 shadow-card">
+      <section className="mt-4 rounded-xl border border-surface-variant bg-surface-container-lowest p-5 shadow-card">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display text-title-lg text-on-surface">What&apos;s left</h2>
           <span className="font-label-sm text-label-sm font-medium text-on-surface-variant">
@@ -231,7 +231,7 @@ export default function GradeCalculator() {
               const tone = result.guaranteed
                 ? 'border-secondary-fixed bg-secondary-container/25'
                 : result.achievable
-                  ? 'border-surface-variant bg-white'
+                  ? 'border-surface-variant bg-surface-container-lowest'
                   : 'border-error-container bg-error-container/30';
               return (
                 <div

@@ -3,7 +3,16 @@ import { Link } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { useCountUp } from '../hooks/useCountUp';
 import { SEED_STUDY_SETS, relativeTime, type StudySet } from '../data/studySets';
-import { EMPTY_ACTIVITY, currentStreak, weeklyGoalProgress, formatStudyTime, type ActivityState } from '../engine/activity';
+import {
+  EMPTY_ACTIVITY,
+  currentStreak,
+  weeklyGoalProgress,
+  weeklyReviewCount,
+  weeklyStudyTime,
+  formatStudyTime,
+  type ActivityState,
+} from '../engine/activity';
+import { StudyHeatmap } from '../components/StudyHeatmap';
 import { PlusIcon, LightbulbIcon, FlameIcon, BiotechIcon, PsychologyIcon, MenuBookIcon } from '../components/icons';
 
 /** Weekly target for cards reviewed + quiz questions answered, combined. */
@@ -73,6 +82,8 @@ export default function Dashboard() {
 
   const streak = useMemo(() => currentStreak(activity), [activity]);
   const weeklyProgress = useMemo(() => weeklyGoalProgress(activity, WEEKLY_GOAL), [activity]);
+  const weekReviews = useMemo(() => weeklyReviewCount(activity), [activity]);
+  const weekTime = useMemo(() => weeklyStudyTime(activity), [activity]);
 
   return (
     <div className="mx-auto w-full max-w-container-max px-4 pb-stack-xl pt-stack-md md:px-gutter">
@@ -135,7 +146,7 @@ export default function Dashboard() {
                 <Link
                   key={set.id}
                   to={`/study/${set.id}`}
-                  className="pressable group rounded-xl border border-surface-variant bg-white p-6 shadow-card transition-all hover:border-surface-tint/30"
+                  className="pressable group rounded-xl border border-surface-variant bg-surface-container-lowest p-6 shadow-card transition-all hover:border-surface-tint/30"
                 >
                   <div className="mb-4 flex items-start justify-between">
                     <div className="grid h-12 w-12 place-items-center rounded-lg bg-surface-container-low text-primary">
@@ -164,7 +175,7 @@ export default function Dashboard() {
           </div>
 
           {studySets.length === 0 && (
-            <div className="rounded-xl border border-surface-variant bg-white p-8 text-center">
+            <div className="rounded-xl border border-surface-variant bg-surface-container-lowest p-8 text-center">
               <p className="text-on-surface-variant">No study sets yet.</p>
               <Link to="/upload" className="mt-2 inline-block font-medium text-primary hover:underline">
                 Upload your notes to create one →
@@ -204,12 +215,13 @@ export default function Dashboard() {
 
         {/* Right column — Weekly Progress */}
         <div className="flex flex-col gap-stack-md lg:col-span-4">
-          <div className="flex flex-col items-center rounded-xl border border-surface-variant bg-white p-8 shadow-soft">
+          <div className="flex flex-col items-center rounded-xl border border-surface-variant bg-surface-container-lowest p-8 shadow-soft">
             <h3 className="mb-6 w-full text-left font-display text-title-lg text-on-surface">Weekly Progress</h3>
             <ProgressRing value={weeklyProgress} />
             <div className="mt-8 grid w-full grid-cols-2 gap-4">
-              <StatTile label="Cards Reviewed" value={activity.cardsReviewed.toLocaleString('en-US')} />
-              <StatTile label="Study Time" value={formatStudyTime(activity.studyTimeMs)} />
+              {/* Weekly figures under a weekly heading — the lifetime totals live below. */}
+              <StatTile label="Reviews This Week" value={weekReviews.toLocaleString('en-US')} />
+              <StatTile label="Time This Week" value={formatStudyTime(weekTime)} />
               <div className="col-span-2 flex items-center justify-between rounded-lg border border-surface-variant bg-surface-container-low p-4">
                 <div className="flex items-center gap-2">
                   <FlameIcon className="h-5 w-5 text-secondary" />
@@ -220,8 +232,25 @@ export default function Dashboard() {
                 </span>
               </div>
             </div>
+
+            {/* All-time totals — kept distinct from the weekly numbers above. */}
+            <div className="mt-4 flex w-full items-center justify-between border-t border-surface-variant pt-4">
+              <span className="font-label-sm text-label-sm text-on-surface-variant">All time</span>
+              <span className="font-label-sm text-label-sm text-on-surface-variant">
+                {(() => {
+                  const total = activity.cardsReviewed + activity.quizQuestionsAnswered;
+                  return `${total.toLocaleString('en-US')} ${total === 1 ? 'review' : 'reviews'}`;
+                })()}{' '}
+                · {formatStudyTime(activity.studyTimeMs)}
+              </span>
+            </div>
           </div>
         </div>
+      </div>
+
+      {/* Study activity heatmap — full width beneath the grid */}
+      <div className="mt-stack-md">
+        <StudyHeatmap activity={activity} />
       </div>
     </div>
   );

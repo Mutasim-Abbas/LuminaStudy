@@ -41,7 +41,7 @@ export default function StudySetDetail() {
       <div className="stagger mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Link
           to={`/study/${set.id}/flashcards`}
-          className="pressable rounded-xl border border-surface-variant bg-white p-5 shadow-card"
+          className="pressable rounded-xl border border-surface-variant bg-surface-container-lowest p-5 shadow-card"
         >
           <LibraryIcon className="mb-3 h-6 w-6 text-primary" />
           <h2 className="font-display text-title-lg text-on-surface">Flashcards</h2>
@@ -51,7 +51,7 @@ export default function StudySetDetail() {
         </Link>
         <Link
           to={`/study/${set.id}/quiz`}
-          className="pressable rounded-xl border border-surface-variant bg-white p-5 shadow-card"
+          className="pressable rounded-xl border border-surface-variant bg-surface-container-lowest p-5 shadow-card"
         >
           <QuizIcon className="mb-3 h-6 w-6 text-primary" />
           <h2 className="font-display text-title-lg text-on-surface">Practice Quiz</h2>

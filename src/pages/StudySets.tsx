@@ -59,7 +59,7 @@ export default function StudySets() {
               return (
                 <div
                   key={f.subject}
-                  className="rounded-xl border border-surface-variant bg-white p-6 shadow-card"
+                  className="rounded-xl border border-surface-variant bg-surface-container-lowest p-6 shadow-card"
                 >
                   <div className="mb-4 grid h-12 w-12 place-items-center rounded-lg bg-surface-container-low text-primary">
                     <Icon className="h-6 w-6" />
@@ -89,7 +89,7 @@ export default function StudySets() {
                 <Link
                   key={set.id}
                   to={`/study/${set.id}`}
-                  className="pressable flex flex-col gap-4 rounded-xl border border-surface-variant bg-white p-4 shadow-card lg:flex-row lg:items-center"
+                  className="pressable flex flex-col gap-4 rounded-xl border border-surface-variant bg-surface-container-lowest p-4 shadow-card lg:flex-row lg:items-center"
                 >
                   <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-surface-container-low text-primary">
                     <Icon className="h-5 w-5" />
@@ -123,7 +123,7 @@ export default function StudySets() {
             })}
           </div>
         ) : (
-          <div className="rounded-xl border border-surface-variant bg-white p-8 text-center">
+          <div className="rounded-xl border border-surface-variant bg-surface-container-lowest p-8 text-center">
             <p className="text-on-surface-variant">No study sets yet.</p>
             <Link to="/upload" className="mt-2 inline-block font-medium text-primary hover:underline">
               Upload your notes to create one →

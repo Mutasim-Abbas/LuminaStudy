@@ -10,6 +10,24 @@
     />
     <link rel="manifest" href="/manifest.webmanifest" />
     <title>Lumina Study</title>
+    <script>
+      // Resolve the theme before first paint so the page never flashes light
+      // then snap to dark. Mirrors src/hooks/useTheme.ts — keep both in sync.
+      (function () {
+        try {
+          var stored = localStorage.getItem('lumina.theme');
+          var resolved =
+            stored === 'light' || stored === 'dark'
+              ? stored
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+          document.documentElement.setAttribute('data-theme', resolved);
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

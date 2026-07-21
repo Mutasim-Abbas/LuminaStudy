@@ -70,7 +70,7 @@ export default function CreateSet() {
   };
 
   const input =
-    'w-full rounded-lg border border-surface-variant bg-white px-3 py-2 font-body text-body-md text-on-surface focus:border-primary focus:outline-none';
+    'w-full rounded-lg border border-surface-variant bg-surface-container-lowest px-3 py-2 font-body text-body-md text-on-surface focus:border-primary focus:outline-none';
 
   return (
     <div className="mx-auto w-full max-w-[820px] px-4 pb-24 pt-6 sm:px-6">
@@ -121,7 +121,7 @@ export default function CreateSet() {
         </h2>
         <div className="flex flex-col gap-3">
           {cards.map((card, i) => (
-            <div key={i} className="flex flex-col gap-2 rounded-xl border border-surface-variant bg-white p-4 sm:flex-row">
+            <div key={i} className="flex flex-col gap-2 rounded-xl border border-surface-variant bg-surface-container-lowest p-4 sm:flex-row">
               <input
                 className={input}
                 placeholder="Front (question)"
@@ -165,7 +165,7 @@ export default function CreateSet() {
         </h2>
         <div className="flex flex-col gap-4">
           {questions.map((q, i) => (
-            <div key={i} className="flex flex-col gap-3 rounded-xl border border-surface-variant bg-white p-4">
+            <div key={i} className="flex flex-col gap-3 rounded-xl border border-surface-variant bg-surface-container-lowest p-4">
               <div className="flex items-center gap-2">
                 <input
                   className={input}

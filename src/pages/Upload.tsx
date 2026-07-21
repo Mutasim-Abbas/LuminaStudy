@@ -212,14 +212,14 @@ export default function Upload() {
                   value={text}
                   onChange={(e) => setText(e.target.value.slice(0, MAX_CHARS))}
                   placeholder="Paste your lecture notes, textbook section, or slides text here…"
-                  className="min-h-[140px] w-full resize-y rounded-xl border border-surface-variant bg-white p-3 font-body text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  className="min-h-[140px] w-full resize-y rounded-xl border border-surface-variant bg-surface-container-lowest p-3 font-body text-body-md text-on-surface focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                 />
                 <div className="flex items-center justify-between">
                   <input
                     value={hint}
                     onChange={(e) => setHint(e.target.value)}
                     placeholder="Subject (optional), e.g. Biology"
-                    className="w-1/2 rounded-lg border border-surface-variant bg-white px-3 py-2 font-body text-body-sm text-on-surface focus:border-primary focus:outline-none"
+                    className="w-1/2 rounded-lg border border-surface-variant bg-surface-container-lowest px-3 py-2 font-body text-body-sm text-on-surface focus:border-primary focus:outline-none"
                   />
                   <span className="font-label-sm text-label-sm text-on-surface-variant">
                     {text.length.toLocaleString()} / {MAX_CHARS.toLocaleString()}
