@@ -38,9 +38,41 @@ const credentials = z.object({
     .max(200, 'That password is too long.'),
 });
 
+/**
+ * Bot signals sent with every sign-up. Neither is a CAPTCHA — they're the cheap
+ * checks that cost a real person nothing:
+ *
+ *  - `website` is a honeypot: hidden from view, so only a form-filling script
+ *    puts anything in it.
+ *  - `elapsedMs` is how long the form was on screen. A human cannot read three
+ *    labels and type an email and password in under a second and a half.
+ *
+ * Both are advisory — a determined bot forges them trivially. They exist to
+ * stop the volume of dumb automated sign-ups, with the per-email lockout and
+ * per-IP rate limit behind them for the rest. Swap in Turnstile/hCaptcha here
+ * if this ever needs to hold against a targeted attack.
+ */
+const MIN_FORM_TIME_MS = 1500;
+
+const botSignals = z.object({
+  website: z.string().max(200).optional(),
+  elapsedMs: z.number().int().nonnegative().optional(),
+});
+
+const signupBody = credentials.extend({
+  name: z.string().trim().min(1, 'Tell us your name.').max(80),
+}).merge(botSignals);
+
+/** Returns a rejection reason, or null when the submission looks human. */
+function botRejection(body: z.infer<typeof botSignals>): string | null {
+  if (body.website && body.website.trim().length > 0) return 'honeypot';
+  if (typeof body.elapsedMs === 'number' && body.elapsedMs < MIN_FORM_TIME_MS) return 'too_fast';
+  return null;
+}
+
 /** Never let a password hash leave the server. */
-function publicUser(row: Pick<UserRow, 'id' | 'email'>) {
-  return { id: row.id, email: row.email };
+function publicUser(row: Pick<UserRow, 'id' | 'email' | 'name'>) {
+  return { id: row.id, email: row.email, name: row.name };
 }
 
 /**
@@ -59,14 +91,26 @@ export async function authRoutes(app: FastifyInstance) {
   };
 
   app.post('/api/auth/signup', { config: authLimit }, async (request, reply) => {
-    const parsed = credentials.safeParse(request.body);
+    const parsed = signupBody.safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
         error: 'invalid_request',
         message: parsed.error.issues[0]?.message ?? 'Check your details.',
       });
     }
-    const { email, password } = parsed.data;
+
+    // Checked before touching the database, so a bot costs us nothing. The
+    // message is deliberately generic — naming the trap teaches the next script.
+    const rejection = botRejection(parsed.data);
+    if (rejection) {
+      request.log.warn({ rejection, email: parsed.data.email }, 'signup rejected as automated');
+      return reply.code(400).send({
+        error: 'failed_verification',
+        message: "That didn't look like a human submission. Please try again.",
+      });
+    }
+
+    const { email, password, name } = parsed.data;
 
     const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
     if (existing) {
@@ -75,13 +119,10 @@ export async function authRoutes(app: FastifyInstance) {
         .send({ error: 'email_taken', message: 'That email already has an account.' });
     }
 
-    const user = { id: randomUUID(), email };
-    db.prepare('INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)').run(
-      user.id,
-      user.email,
-      await hashPassword(password),
-      Date.now(),
-    );
+    const user = { id: randomUUID(), email, name };
+    db.prepare(
+      'INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
+    ).run(user.id, user.email, user.name, await hashPassword(password), Date.now());
 
     setSessionCookie(reply, signSession(user));
     return reply.code(201).send({ user: publicUser(user) });
@@ -127,7 +168,7 @@ export async function authRoutes(app: FastifyInstance) {
     clearLoginFailures(email);
     pruneLoginAttempts(now);
 
-    const user = { id: row.id, email: row.email };
+    const user = { id: row.id, email: row.email, name: row.name ?? '' };
     setSessionCookie(reply, signSession(user));
     return reply.send({ user: publicUser(user) });
   });

@@ -33,6 +33,8 @@ const studySet = z.object({
   title: z.string().min(1).max(200),
   description: z.string().max(1000).default(''),
   mastery: z.number().int().min(0).max(100).default(0),
+  summary: z.string().max(20000).default(''),
+  highlights: z.array(z.string().max(1000)).max(20).default([]),
   lastUpdatedMs: z.number().int().nonnegative().optional(),
   cards: z.array(flashcard).max(500),
   quiz: z.array(quizQuestion).max(200),
@@ -42,7 +44,12 @@ type StudySetInput = z.infer<typeof studySet>;
 
 /** DB row -> the shape the frontend already uses. */
 function toClient(row: StudySetRow) {
-  const data = JSON.parse(row.data) as { cards: unknown[]; quiz: unknown[] };
+  const data = JSON.parse(row.data) as {
+    cards: unknown[];
+    quiz: unknown[];
+    summary?: string;
+    highlights?: string[];
+  };
   return {
     id: row.id,
     subject: row.subject,
@@ -50,13 +57,21 @@ function toClient(row: StudySetRow) {
     description: row.description,
     mastery: row.mastery,
     lastUpdatedMs: row.updated_at,
+    // Sets written before summaries existed simply have none.
+    summary: data.summary ?? '',
+    highlights: data.highlights ?? [],
     cards: data.cards ?? [],
     quiz: data.quiz ?? [],
   };
 }
 
 function upsert(userId: string, set: StudySetInput, now: number) {
-  const data = JSON.stringify({ cards: set.cards, quiz: set.quiz });
+  const data = JSON.stringify({
+    cards: set.cards,
+    quiz: set.quiz,
+    summary: set.summary,
+    highlights: set.highlights,
+  });
   // The WHERE clause on update is what stops one user overwriting another's row
   // even if they somehow guessed the id.
   db.prepare(

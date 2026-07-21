@@ -2,7 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { SEED_STUDY_SETS, type StudySet } from '../data/studySets';
 import { dueCount, formatDueIn, nextDueMs, setMastery, type SrsState } from '../engine/srs';
-import { LibraryIcon, QuizIcon } from '../components/icons';
+import { LibraryIcon, QuizIcon, LightbulbIcon, MenuBookIcon } from '../components/icons';
 
 export default function StudySetDetail() {
   const { setId } = useParams();
@@ -78,6 +78,48 @@ export default function StudySetDetail() {
           </p>
         </Link>
       </div>
+
+      {/* Highlights — the few things to remember if nothing else */}
+      {set.highlights && set.highlights.length > 0 && (
+        <section className="mt-8 rounded-xl border border-secondary/40 bg-secondary-container/25 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <LightbulbIcon className="h-5 w-5 text-secondary" />
+            <h2 className="font-display text-title-lg text-on-surface">Key Highlights</h2>
+          </div>
+          <ul className="flex flex-col gap-2.5">
+            {set.highlights.map((point, i) => (
+              <li key={i} className="flex gap-3">
+                <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-secondary font-label-sm text-[11px] font-bold text-on-secondary">
+                  {i + 1}
+                </span>
+                <span className="font-body text-body-md text-on-surface">{point}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Summary — a study-guide write-up of the source material */}
+      {set.summary && set.summary.trim().length > 0 && (
+        <section className="mt-6 rounded-xl border border-surface-variant bg-surface-container-lowest p-5 shadow-card">
+          <div className="mb-3 flex items-center gap-2">
+            <MenuBookIcon className="h-5 w-5 text-primary" />
+            <h2 className="font-display text-title-lg text-on-surface">Summary</h2>
+          </div>
+          {/* The model returns paragraphs separated by blank lines. */}
+          <div className="flex flex-col gap-3">
+            {set.summary
+              .split(/\n{2,}/)
+              .map((para) => para.trim())
+              .filter(Boolean)
+              .map((para, i) => (
+                <p key={i} className="font-body text-body-md leading-relaxed text-on-surface-variant">
+                  {para}
+                </p>
+              ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

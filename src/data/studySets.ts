@@ -25,6 +25,10 @@ export interface StudySet {
   mastery: number;
   /** Updated whenever the set is reviewed — powers the "Updated Xh ago" chip. */
   lastUpdatedMs: number;
+  /** Study-guide prose written from the source material. May be empty. */
+  summary?: string;
+  /** Key takeaways, most important first. May be empty. */
+  highlights?: string[];
   cards: Flashcard[];
   quiz: QuizQuestion[];
 }

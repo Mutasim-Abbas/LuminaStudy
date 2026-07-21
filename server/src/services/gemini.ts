@@ -23,7 +23,10 @@ export interface GeneratedQuestion {
 export interface GeneratedSet {
   subject: string;
   title: string;
+  /** A few paragraphs a student could revise from on its own. */
   summary: string;
+  /** The handful of points worth remembering if nothing else is. */
+  highlights: string[];
   flashcards: GeneratedFlashcard[];
   quiz: GeneratedQuestion[];
 }
@@ -44,7 +47,15 @@ const responseSchema = {
   properties: {
     subject: { type: Type.STRING, description: 'Broad subject, e.g. "Biology"' },
     title: { type: Type.STRING, description: 'A short title for this study set' },
-    summary: { type: Type.STRING, description: 'A concise study-guide summary' },
+    summary: {
+      type: Type.STRING,
+      description: 'A study-guide summary of 2-3 short paragraphs, revisable on its own',
+    },
+    highlights: {
+      type: Type.ARRAY,
+      description: '4-8 key takeaways, one sentence each, ordered by importance',
+      items: { type: Type.STRING },
+    },
     flashcards: {
       type: Type.ARRAY,
       items: {
@@ -70,7 +81,7 @@ const responseSchema = {
       },
     },
   },
-  required: ['subject', 'title', 'summary', 'flashcards', 'quiz'],
+  required: ['subject', 'title', 'summary', 'highlights', 'flashcards', 'quiz'],
 };
 
 function buildPrompt(text: string, hint: string | undefined, cards: number, questions: number): string {
@@ -79,6 +90,8 @@ function buildPrompt(text: string, hint: string | undefined, cards: number, ques
     `Produce about ${cards} flashcards (clear question on the front, concise answer on the back)`,
     `and about ${questions} multiple-choice questions. Each question must have exactly 4 options`,
     'with exactly one correct answer, and a one-sentence explanation of why it is correct.',
+    'Also write a summary of 2-3 short paragraphs that a student could revise from on its own,',
+    'and 4-8 highlights: the single most important takeaways, one sentence each, most important first.',
     'Base everything strictly on the material — do not invent facts that are not supported by it.',
     hint ? `The user says this material is about: "${hint}".` : '',
     '',
@@ -125,10 +138,20 @@ function coerce(parsed: unknown): GeneratedSet {
     throw new GeminiError('The AI could not produce study material from that text.', 422);
   }
 
+  // Highlights are best-effort: a model that skips them shouldn't fail the whole
+  // generation, so an absent or malformed list becomes an empty one.
+  const highlights = Array.isArray(obj.highlights)
+    ? obj.highlights
+        .filter((h): h is string => typeof h === 'string' && h.trim().length > 0)
+        .map((h) => h.trim())
+        .slice(0, 8)
+    : [];
+
   return {
     subject: typeof obj.subject === 'string' ? obj.subject.trim() : 'General',
     title: typeof obj.title === 'string' && obj.title.trim() ? obj.title.trim() : 'New Study Set',
     summary: typeof obj.summary === 'string' ? obj.summary.trim() : '',
+    highlights,
     flashcards,
     quiz,
   };

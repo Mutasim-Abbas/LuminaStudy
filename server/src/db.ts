@@ -37,6 +37,7 @@ db.exec(`
     created_at   INTEGER NOT NULL
   );
 
+
   CREATE TABLE IF NOT EXISTS study_sets (
     id          TEXT PRIMARY KEY,
     user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -73,9 +74,27 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_login_attempts ON login_attempts(email, created_at DESC);
 `);
 
+/**
+ * Migrations for databases that already exist.
+ *
+ * The CREATE TABLE statements above only shape a *fresh* database — they are
+ * no-ops once the table is there, so a column added after launch never appears
+ * on a live install. SQLite has no `ADD COLUMN IF NOT EXISTS`, so we inspect
+ * the table first. Adding a column with a NOT NULL default is safe to run
+ * against a table with rows in it.
+ */
+function addColumnIfMissing(table: string, column: string, definition: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
+  if (columns.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+addColumnIfMissing('users', 'name', "TEXT NOT NULL DEFAULT ''");
+
 export interface UserRow {
   id: string;
   email: string;
+  name: string;
   password_hash: string;
   created_at: number;
 }

@@ -28,8 +28,17 @@ afterAll(async () => {
 
 const CREDS = { email: 'ada@example.com', password: 'correct horse battery' };
 
-async function signup(creds = CREDS) {
-  return app.inject({ method: 'POST', url: '/api/auth/signup', payload: creds });
+/**
+ * Sign up. Supplies a name by default (now required) and an elapsedMs past the
+ * human-time threshold, so the bot checks don't reject the test itself. Either
+ * can be overridden to exercise those checks directly.
+ */
+async function signup(creds: Record<string, unknown> = CREDS) {
+  return app.inject({
+    method: 'POST',
+    url: '/api/auth/signup',
+    payload: { name: 'Ada', elapsedMs: 5000, ...creds },
+  });
 }
 
 /** Pull the session cookie out of a response so later requests are authenticated. */
@@ -71,6 +80,43 @@ describe('signup', () => {
     await signup();
     const res = await signup();
     expect(res.statusCode).toBe(409);
+  });
+
+  it('stores and returns the name', async () => {
+    const res = await signup({ ...CREDS, name: 'Grace Hopper' });
+    expect(res.json().user.name).toBe('Grace Hopper');
+  });
+
+  it('requires a name', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/signup',
+      payload: { email: 'x@y.com', password: 'a good password', elapsedMs: 5000 },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('rejects a submission that fills the honeypot', async () => {
+    const res = await signup({ ...CREDS, website: 'http://spam.example' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('failed_verification');
+    // Nothing was written.
+    expect(db.prepare('SELECT COUNT(*) AS n FROM users').get()).toMatchObject({ n: 0 });
+  });
+
+  it('rejects a submission that arrives impossibly fast', async () => {
+    const res = await signup({ ...CREDS, elapsedMs: 200 });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('failed_verification');
+  });
+
+  it('allows a submission with no bot signals at all (backward compatible)', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/signup',
+      payload: { name: 'Ada', ...CREDS },
+    });
+    expect(res.statusCode).toBe(201);
   });
 
   it('rejects a weak password and a malformed email', async () => {

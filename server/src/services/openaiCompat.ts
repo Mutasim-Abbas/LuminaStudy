@@ -8,10 +8,12 @@ import { GeminiError, type GeneratedSet } from './gemini.js';
  */
 
 const SYSTEM = `You are an expert study assistant. From the user's study material, produce STRICT JSON:
-{"subject": string, "title": string, "summary": string,
+{"subject": string, "title": string, "summary": string, "highlights": [string],
  "flashcards": [{"front": string, "back": string}],
  "quiz": [{"prompt": string, "options": [string,string,string,string], "answerIndex": number, "explanation": string}]}
 Rules: exactly 4 options per question, exactly one correct (answerIndex 0-3), one-sentence explanation.
+"summary" is 2-3 short paragraphs a student could revise from on its own.
+"highlights" is 4-8 key takeaways, one sentence each, most important first.
 Base everything strictly on the material. Output ONLY the JSON object, no markdown fences.`;
 
 export async function generateViaOpenAICompat(opts: {

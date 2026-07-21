@@ -40,6 +40,9 @@ function toStudySet(gen: GeneratedSet): StudySet {
     subject: gen.subject || 'General',
     title: gen.title || 'New Study Set',
     description: gen.summary ? gen.summary.slice(0, 140) : 'AI-generated from your material.',
+    // The full summary and highlights are kept, not just the truncated blurb.
+    summary: gen.summary ?? '',
+    highlights: gen.highlights ?? [],
     mastery: 0,
     lastUpdatedMs: Date.now(),
     cards: gen.flashcards.map((c) => ({ id: crypto.randomUUID(), front: c.front, back: c.back })),
@@ -257,9 +260,26 @@ export default function Upload() {
           {/* Right: checklist / result */}
           <div className="rounded-xl border border-surface-variant bg-surface-bright p-6">
             {phase === 'done' && result ? (
-              <div className="rise-in">
-                <h3 className="mb-1 font-display text-title-lg text-on-surface">{result.title}</h3>
-                <p className="mb-5 font-body text-body-md text-on-surface-variant">{result.summary}</p>
+              <div className="rise-in max-h-[420px] overflow-y-auto pr-1">
+                <h3 className="mb-2 font-display text-title-lg text-on-surface">{result.title}</h3>
+                <p className="mb-4 font-body text-body-md text-on-surface-variant">{result.summary}</p>
+
+                {result.highlights.length > 0 && (
+                  <div className="mb-5">
+                    <h4 className="mb-2 font-label-sm text-label-sm uppercase tracking-wider text-on-surface/70">
+                      Key highlights
+                    </h4>
+                    <ul className="flex flex-col gap-1.5">
+                      {result.highlights.map((point, i) => (
+                        <li key={i} className="flex gap-2 font-body text-body-sm text-on-surface">
+                          <span className="text-secondary">•</span>
+                          <span>{point}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-3 font-body text-body-lg text-on-surface">
                   <span className="flex items-center gap-3">
                     <CheckCircleIcon className="h-5 w-5 text-secondary" />

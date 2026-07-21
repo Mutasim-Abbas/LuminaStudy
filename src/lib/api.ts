@@ -20,6 +20,7 @@ export interface GeneratedSet {
   subject: string;
   title: string;
   summary: string;
+  highlights: string[];
   flashcards: GeneratedFlashcard[];
   quiz: GeneratedQuestion[];
 }
@@ -89,6 +90,17 @@ export async function generateStudySet(input: {
 export interface AccountUser {
   id: string;
   email: string;
+  name: string;
+}
+
+export interface SignUpInput {
+  name: string;
+  email: string;
+  password: string;
+  /** Honeypot — a real user leaves this empty. */
+  website?: string;
+  /** Milliseconds the sign-up form was on screen before submitting. */
+  elapsedMs?: number;
 }
 
 /**
@@ -114,10 +126,10 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return payload;
 }
 
-export async function signUp(email: string, password: string): Promise<AccountUser> {
+export async function signUp(input: SignUpInput): Promise<AccountUser> {
   const { user } = await request<{ user: AccountUser }>('/api/auth/signup', {
     method: 'POST',
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(input),
   });
   return user;
 }

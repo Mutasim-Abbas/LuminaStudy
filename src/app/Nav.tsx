@@ -26,12 +26,21 @@ const LINKS: { to: string; label: string; end?: boolean; icon: (p: { className?:
   { to: '/planner', label: 'Degree Planner', icon: GraduationCapIcon },
 ];
 
+/**
+ * Sidebar item. The active route keeps a solid accent bar; an inactive item
+ * *previews* that same treatment on hover — the accent bar grows in from the
+ * left and the row nudges over — then settles back when the pointer leaves.
+ * The left border is always present but transparent, so nothing reflows as it
+ * colours in. `group` lets the accent react to hovering anywhere on the row.
+ */
 const navItemClass = (active: boolean) =>
-  `flex items-center gap-4 px-6 py-3 rounded-lg font-label-lg text-label-lg transition-colors duration-fast ${
+  [
+    'group relative flex items-center gap-4 rounded-lg border-l-4 py-3 pl-[20px] pr-6',
+    'font-label-lg text-label-lg transition-all duration-fast ease-out',
     active
-      ? 'border-l-4 border-primary bg-surface-container-low text-primary font-bold -ml-1 pl-[26px]'
-      : 'text-on-surface-variant hover:bg-surface-container-low hover:text-primary'
-  }`;
+      ? 'border-primary bg-surface-container-low font-bold text-primary'
+      : 'border-transparent text-on-surface-variant hover:translate-x-1 hover:border-primary/60 hover:bg-surface-container-low hover:text-primary',
+  ].join(' ');
 
 /**
  * Fixed 280px sidebar (desktop) + a fixed top bar with search. Mobile
@@ -55,7 +64,7 @@ export function Sidebar() {
         {LINKS.map((link) => (
           <li key={link.to}>
             <NavLink to={link.to} end={link.end} className={({ isActive }) => navItemClass(isActive)}>
-              <link.icon className="h-5 w-5 shrink-0" />
+              <link.icon className="h-5 w-5 shrink-0 transition-transform duration-fast ease-out group-hover:scale-110" />
               <span>{link.label}</span>
             </NavLink>
           </li>
@@ -89,13 +98,20 @@ function ThemeToggle() {
  */
 function AccountButton({ fallbackInitial, localName }: { fallbackInitial: string; localName: string }) {
   const { user, loading } = useAuth();
-  const initial = user ? user.email.charAt(0).toUpperCase() : fallbackInitial;
+  // Prefer the account's name for the avatar initial, then its email.
+  const initial = user ? (user.name || user.email).charAt(0).toUpperCase() : fallbackInitial;
 
   return (
     <Link
       to="/account"
-      title={user ? `Signed in as ${user.email}` : localName ? `${localName} — sign in to sync` : 'Sign in to sync'}
-      aria-label={user ? `Account: ${user.email}` : 'Sign in'}
+      title={
+        user
+          ? `Signed in as ${user.name || user.email}`
+          : localName
+            ? `${localName} — sign in to sync`
+            : 'Sign in to sync'
+      }
+      aria-label={user ? `Account: ${user.name || user.email}` : 'Sign in'}
       className="pressable relative grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-surface-container-highest bg-primary-fixed font-label-sm font-bold text-on-primary-fixed"
     >
       {initial}

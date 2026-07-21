@@ -31,6 +31,7 @@ const ALGORITHM = 'HS256' as const;
 export interface SessionUser {
   id: string;
   email: string;
+  name: string;
 }
 
 /** Extra fields we attach to the request once authenticated. */
@@ -41,7 +42,7 @@ declare module 'fastify' {
 }
 
 export function signSession(user: SessionUser): string {
-  return jwt.sign({ sub: user.id, email: user.email }, env.JWT_SECRET, {
+  return jwt.sign({ sub: user.id, email: user.email, name: user.name }, env.JWT_SECRET, {
     algorithm: ALGORITHM,
     expiresIn: `${SESSION_DAYS}d`,
   });
@@ -53,7 +54,12 @@ export function verifySession(token: string | undefined): SessionUser | null {
   try {
     const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: [ALGORITHM] });
     if (typeof payload === 'string' || !payload.sub) return null;
-    return { id: String(payload.sub), email: String((payload as { email?: string }).email ?? '') };
+    const claims = payload as { email?: string; name?: string };
+    return {
+      id: String(payload.sub),
+      email: String(claims.email ?? ''),
+      name: String(claims.name ?? ''),
+    };
   } catch {
     // Expired or forged — treated the same way: no session.
     return null;

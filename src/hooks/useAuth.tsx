@@ -7,6 +7,7 @@ import {
   signUp as apiSignUp,
   syncCloudSets,
   type AccountUser,
+  type SignUpInput,
 } from '../lib/api';
 import { SEED_STUDY_SETS, STUDY_SETS_KEY, installSeedSets, type StudySet } from '../data/studySets';
 
@@ -25,7 +26,7 @@ interface AuthValue {
   loading: boolean;
   /** True while a sign-in/sign-up round trip (including sync) is running. */
   busy: boolean;
-  signUp: (email: string, password: string) => Promise<void>;
+  signUp: (input: SignUpInput) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
@@ -99,10 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = useCallback(
-    async (email: string, password: string) => {
+    async (input: SignUpInput) => {
       setBusy(true);
       try {
-        setUser(await apiSignUp(email, password));
+        setUser(await apiSignUp(input));
         await reconcile();
       } finally {
         setBusy(false);
