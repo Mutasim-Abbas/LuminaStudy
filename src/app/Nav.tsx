@@ -43,34 +43,96 @@ const navItemClass = (active: boolean) =>
   ].join(' ');
 
 /**
- * Fixed 280px sidebar (desktop) + a fixed top bar with search. Mobile
- * collapses the sidebar behind a tap-to-open menu — a horizontal scroll
- * strip is unreliable on real phones, a full-screen drawer always works.
+ * Desktop sidebar, hidden until the pointer reaches the left edge.
+ *
+ * The panel sits off-screen and slides in over the content rather than pushing
+ * it, so revealing it never reflows the page underneath. Two details keep that
+ * from becoming a usability trap:
+ *
+ *  - A slim resting handle is always visible at the edge. A control with no
+ *    affordance is a control nobody finds, and "hover the exact left edge" is
+ *    not a thing anyone guesses.
+ *  - It opens on focus as well as hover (`group-focus-within`), so tabbing into
+ *    the navigation reveals it. Hover alone would put the primary navigation
+ *    permanently out of reach of keyboard users.
+ *
+ * The panel is a child of the hover target, so hovering the open panel — which
+ * overflows its parent's 14px box — still counts as hovering the group and
+ * keeps it open.
  */
 export function Sidebar() {
+  // Two independent reasons to be open, so moving the pointer away can't undo
+  // a deliberate click: hovering is transient, clicking pins it until clicked
+  // again. `open` is simply either one.
+  const [hovering, setHovering] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const open = hovering || pinned;
+  const { pathname } = useLocation();
+
+  // Following a link should get out of the way rather than leave the panel
+  // sitting over the page you just navigated to.
+  useEffect(() => setPinned(false), [pathname]);
+
+  // Escape closes a pinned panel — the usual way out of an overlay.
+  useEffect(() => {
+    if (!pinned) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setPinned(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [pinned]);
+
   return (
-    <nav
-      aria-label="Primary"
-      className="fixed left-0 top-0 z-50 hidden h-screen w-[280px] flex-col gap-2 bg-surface-container-lowest py-stack-md shadow-nav md:flex"
+    <div
+      className="fixed left-0 top-0 z-50 hidden md:block"
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      // focus/blur bubble in React, so these cover the whole panel: tabbing to
+      // any link opens it, and leaving for something outside closes it.
+      onFocus={() => setHovering(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHovering(false);
+      }}
     >
-      <div className="mb-8 flex items-center gap-3 px-gutter">
-        <LuminaMark size={36} />
-        <div>
-          <h1 className="font-display text-title-lg font-bold text-primary">Lumina</h1>
-          <p className="font-label-sm text-label-sm text-on-surface-variant">Study Intelligence</p>
+      {/* The visible control. Always on screen, so the navigation is never a
+          thing you have to already know is there. */}
+      <button
+        type="button"
+        onClick={() => setPinned((p) => !p)}
+        aria-label={open ? 'Close navigation' : 'Open navigation'}
+        aria-expanded={open}
+        aria-controls="primary-nav"
+        className="pressable relative z-10 m-2 grid h-11 w-11 place-items-center rounded-xl bg-surface-container-lowest text-on-surface-variant shadow-soft transition-colors duration-fast hover:text-primary"
+      >
+        <MenuIcon className="h-6 w-6" />
+      </button>
+
+      <nav
+        id="primary-nav"
+        aria-label="Primary"
+        style={{ transform: open ? 'translateX(0)' : 'translateX(-100%)' }}
+        // pt-16 clears the button, which sits above the panel so it stays
+        // visible and clickable while the panel is open.
+        className="absolute inset-y-0 left-0 flex h-screen w-[280px] flex-col gap-2 bg-surface-container-lowest pb-stack-md pt-16 shadow-nav transition-transform duration-base ease-out motion-reduce:transition-none"
+      >
+        <div className="mb-8 flex items-center gap-3 px-gutter">
+          <LuminaMark size={36} />
+          <div>
+            <h1 className="font-display text-title-lg font-bold text-primary">Lumina</h1>
+            <p className="font-label-sm text-label-sm text-on-surface-variant">Study Intelligence</p>
+          </div>
         </div>
-      </div>
-      <ul className="flex flex-col gap-1">
-        {LINKS.map((link) => (
-          <li key={link.to}>
-            <NavLink to={link.to} end={link.end} className={({ isActive }) => navItemClass(isActive)}>
-              <link.icon className="h-5 w-5 shrink-0 transition-transform duration-fast ease-out group-hover:scale-110" />
-              <span>{link.label}</span>
-            </NavLink>
-          </li>
-        ))}
-      </ul>
-    </nav>
+        <ul className="flex flex-col gap-1">
+          {LINKS.map((link) => (
+            <li key={link.to}>
+              <NavLink to={link.to} end={link.end} className={({ isActive }) => navItemClass(isActive)}>
+                <link.icon className="h-5 w-5 shrink-0 transition-transform duration-fast ease-out group-hover:scale-110" />
+                <span>{link.label}</span>
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    </div>
   );
 }
 
@@ -281,7 +343,7 @@ export function TopBar() {
 
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-40 h-16 border-b border-surface-variant bg-surface-container-lowest/90 backdrop-blur-xl md:left-[280px]">
+      <header className="fixed inset-x-0 top-0 z-40 h-16 border-b border-surface-variant bg-surface-container-lowest/90 backdrop-blur-xl md:left-16">
         <div className="mx-auto flex h-full max-w-container-max items-center justify-between gap-4 px-4 md:px-gutter">
           <button
             type="button"

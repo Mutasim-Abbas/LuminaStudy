@@ -16,7 +16,9 @@ export function Layout() {
     <div className="flex min-h-screen flex-col bg-background text-on-background">
       <Sidebar />
       <TopBar />
-      <div className="flex flex-1 flex-col md:ml-[280px]">
+      {/* The sidebar now overlays on hover instead of holding a 280px column,
+          so content spans the full width — only clear of the menu button. */}
+      <div className="flex flex-1 flex-col md:pl-16">
         <main className="flex-1 pt-16">
           <Suspense fallback={<PageFallback />}>
             {/* Keying by pathname replays the page-enter animation on every route. */}
