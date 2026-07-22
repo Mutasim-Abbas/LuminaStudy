@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Lumina Study — AI study tools + grade & degree planner for university students.",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --port 5174 --strictPort",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "lint": "eslint .",

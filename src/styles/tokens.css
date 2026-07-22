@@ -1,6 +1,6 @@
 /**
  * Lumina Study design tokens — Material Design 3 tonal palette, matching the
- * Stitch "Smart Academic Toolkit" reference (see PLAN.md). Components consume
+ * Stitch "Smart Academic Toolkit" reference. Components consume
  * tokens only — never raw hex — which is what lets the dark theme below swap
  * the whole app by redefining these same variables.
  *

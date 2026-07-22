@@ -47,7 +47,7 @@ goto end
 :failed
 echo.
 echo The server did not start. Look at the "Lumina Study" window
-echo for a red error message and send it to Claude.
+echo for a red error message.
 
 :end
 echo.
