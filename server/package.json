@@ -3,7 +3,10 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "Lumina Study backend — secure Gemini AI proxy, SQLite database, and auth.",
+  "description": "Lumina Study backend — secure AI proxy, SQLite database, and auth.",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "dev": "node --import tsx --watch src/index.ts",
     "start": "node dist/index.js",

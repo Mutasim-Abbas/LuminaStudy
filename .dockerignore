@@ -1,0 +1,32 @@
+# Never copy secrets or local state into the build context.
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+
+# Local database — the deployed one lives on a mounted volume.
+data/
+server/data/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Installed and built inside the image.
+node_modules
+server/node_modules
+dist
+server/dist
+
+.git
+.github
+.claude
+.vscode
+.idea
+coverage
+*.log
+Thumbs.db
+.DS_Store
+start-lumina.bat
