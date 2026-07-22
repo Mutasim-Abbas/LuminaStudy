@@ -16,7 +16,7 @@ const cleanSecret = z
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
-  CORS_ORIGIN: z.string().url().default('http://localhost:5180'),
+  CORS_ORIGIN: z.string().url().default('http://localhost:5174'),
   GEMINI_API_KEY: cleanSecret,
   GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
   // Fallback: any OpenAI-compatible provider (Groq, OpenRouter, …).
@@ -27,6 +27,13 @@ const schema = z.object({
   OPENAI_COMPAT_MODEL: z.string().default('llama-3.3-70b-versatile'),
   JWT_SECRET: z.string().optional(),
   DATABASE_PATH: z.string().default('data/lumina.db'),
+  // --- Password-reset email ---
+  // Optional: with no key the reset link is logged to the server console
+  // instead of emailed, so local development works with nothing to configure.
+  RESEND_API_KEY: cleanSecret,
+  MAIL_FROM: z.string().default('Lumina Study <onboarding@resend.dev>'),
+  // Base URL the reset link points at — must be where the app is served from.
+  APP_URL: z.string().url().default('http://localhost:3001'),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -64,4 +71,10 @@ export const env = {
     (compatKey && compatKey.length > 10) ||
       (raw.GEMINI_API_KEY && raw.GEMINI_API_KEY.length > 10),
   ),
+  /**
+   * True when reset emails can actually be sent. When false the server still
+   * issues valid reset links — it just prints them to the console instead of
+   * mailing them, which keeps local development working with no signup.
+   */
+  mailEnabled: Boolean(raw.RESEND_API_KEY && raw.RESEND_API_KEY.length > 10),
 } as const;

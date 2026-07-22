@@ -36,6 +36,8 @@ study what you're about to forget, not what you already know.
 - **Accounts & sync** — email/password accounts with study sets synced to the
   server, so your library follows you across devices. The app is local-first:
   everything also works offline from local storage.
+- **Password reset** — a single-use link, emailed and valid for 30 minutes,
+  that also clears any sign-in lockout you earned while guessing.
 - **Dark mode** — full Material Design 3 dark palette, resolved before first
   paint (no flash), following the system preference until you choose.
 - **Usage limits** — 3 free AI generations per rolling 24 hours per account,
@@ -105,12 +107,19 @@ that file documents every option with empty values.
 | ----------------- | --------------- | ------------------------------------------- |
 | `GROQ_API_KEY`    | yes             | AI provider key — server-side only          |
 | `JWT_SECRET`      | in production   | Signs session cookies; 32+ chars            |
+| `RESEND_API_KEY`  | in production   | Sends password-reset email                  |
+| `APP_URL`         | no              | Base URL the reset link points at           |
 | `CORS_ORIGIN`     | no              | Locks the API to the frontend origin        |
 | `PORT`            | no              | Defaults to `3001`                          |
 
 In development a temporary `JWT_SECRET` is generated at startup if you leave it
 blank, so you can run immediately — logins just reset when the server restarts.
 In production the server refuses to boot without a strong one.
+
+Password reset behaves the same way: with no `RESEND_API_KEY` the server still
+issues valid reset links but prints them to the console instead of emailing
+them, so the flow is testable with nothing to configure. Production refuses that
+fallback rather than pretend an email was sent.
 
 Run `npm run check-key` inside `server/` to confirm your AI key works before
 starting the app.
@@ -128,6 +137,10 @@ starting the app.
 - Sign-in is limited to 5 attempts per account before a 15-minute lockout,
   with identical responses for unknown emails and wrong passwords to prevent
   account enumeration.
+- Reset tokens are 32 random bytes stored only as a SHA-256 hash, single-use,
+  30-minute expiry, and superseded whenever a new link is requested. Asking for
+  a reset returns the same response for every address, so it cannot be used to
+  discover which emails have accounts.
 - Every study-set query is scoped to the session's user id — accounts cannot
   read, overwrite, or delete each other's data (covered by dedicated tests).
 - Input validation with Zod on every endpoint, rate limiting, and hardened

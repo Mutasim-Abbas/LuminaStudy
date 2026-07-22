@@ -12,6 +12,14 @@ import {
 } from '../lib/limits.js';
 import { createCaptcha, verifyCaptcha } from '../lib/captcha.js';
 import { hashPassword, verifyPassword } from '../lib/password.js';
+import { sendPasswordResetEmail } from '../lib/mailer.js';
+import {
+  consumeResetToken,
+  createResetToken,
+  pruneResetTokens,
+  resolveResetToken,
+  RESET_TTL_MINUTES,
+} from '../lib/passwordReset.js';
 import {
   clearSessionCookie,
   currentUser,
@@ -200,4 +208,136 @@ export async function authRoutes(app: FastifyInstance) {
     clearSessionCookie(reply);
     return reply.send({ ok: true });
   });
+
+  /* ---------------------------------------------------------------- */
+  /* Password reset                                                    */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * Step one: ask for a link.
+   *
+   * The response is identical whether or not the address has an account —
+   * otherwise this becomes the account-enumeration oracle that sign-in was
+   * carefully written to avoid. That means a user who mistypes their email is
+   * told "check your inbox" and nothing arrives, which is the accepted cost of
+   * not confirming to a stranger who banks here.
+   *
+   * Limited to 5 per 15 minutes because each call sends real mail: unthrottled
+   * it is both a spam cannon aimed at an arbitrary inbox and a bill.
+   */
+  app.post(
+    '/api/auth/forgot',
+    {
+      config: {
+        rateLimit: { max: env.NODE_ENV === 'test' ? 10_000 : 5, timeWindow: '15 minutes' },
+      },
+    },
+    async (request, reply) => {
+      const parsed = z
+        .object({ email: z.string().trim().toLowerCase().email().max(200) })
+        .safeParse(request.body);
+
+      // Even a malformed address gets the generic answer — a 400 here would
+      // still distinguish "not a real address" from "no account".
+      const generic = {
+        ok: true,
+        message: 'If that email has an account, a reset link is on its way.',
+      };
+      if (!parsed.success) return reply.send(generic);
+
+      const { email } = parsed.data;
+      const now = Date.now();
+      const row = db.prepare('SELECT id, email FROM users WHERE email = ?').get(email) as
+        | Pick<UserRow, 'id' | 'email'>
+        | undefined;
+
+      if (row) {
+        const token = createResetToken(row.id, now);
+        // HashRouter: the client route lives after the '#'.
+        const resetUrl = `${env.APP_URL}/#/reset?token=${encodeURIComponent(token)}`;
+        try {
+          const delivery = await sendPasswordResetEmail(row.email, resetUrl, RESET_TTL_MINUTES);
+          request.log.info({ email, delivery }, 'password reset link issued');
+        } catch (err) {
+          // Still answer generically: a delivery failure must not become a way
+          // to probe which addresses exist. Logged loudly for the operator.
+          request.log.error({ err, email }, 'failed to deliver password reset email');
+        }
+      }
+
+      pruneResetTokens(now);
+      return reply.send(generic);
+    },
+  );
+
+  /**
+   * Step two: redeem the link and set a new password.
+   *
+   * Deliberately *not* returned to the caller anywhere: the raw token. It is
+   * only ever printed to the server console (dev) or mailed (production). An
+   * earlier draft returned it in this response when mail was unconfigured,
+   * which would have handed anyone a reset link for any address on a server
+   * deployed without NODE_ENV set — since that variable defaults to
+   * 'development', a single missing env var would have meant total takeover.
+   */
+  app.post(
+    '/api/auth/reset',
+    {
+      config: {
+        rateLimit: { max: env.NODE_ENV === 'test' ? 10_000 : 10, timeWindow: '15 minutes' },
+      },
+    },
+    async (request, reply) => {
+      const parsed = z
+        .object({
+          token: z.string().min(1).max(200),
+          password: z
+            .string()
+            .min(8, 'Use at least 8 characters.')
+            .max(200, 'That password is too long.'),
+        })
+        .safeParse(request.body);
+
+      if (!parsed.success) {
+        return reply.code(400).send({
+          error: 'invalid_request',
+          message: parsed.error.issues[0]?.message ?? 'Check your details.',
+        });
+      }
+
+      const now = Date.now();
+      const userId = resolveResetToken(parsed.data.token, now);
+      if (!userId) {
+        return reply.code(400).send({
+          error: 'invalid_token',
+          message: 'This reset link is invalid or has expired. Please request a new one.',
+        });
+      }
+
+      const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
+      if (!row) {
+        return reply.code(400).send({
+          error: 'invalid_token',
+          message: 'This reset link is invalid or has expired. Please request a new one.',
+        });
+      }
+
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
+        await hashPassword(parsed.data.password),
+        userId,
+      );
+      consumeResetToken(parsed.data.token, now);
+
+      // Someone who just proved control of the inbox shouldn't still be serving
+      // out a lockout earned by forgetting the old password.
+      clearLoginFailures(row.email);
+
+      // Sign them straight in: they've demonstrated ownership, and bouncing
+      // them to a login form to retype the password they just chose is friction
+      // for no security gain.
+      const user = { id: row.id, email: row.email, name: row.name ?? '' };
+      setSessionCookie(reply, signSession(user));
+      return reply.send({ user: publicUser(user) });
+    },
+  );
 }

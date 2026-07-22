@@ -14,6 +14,7 @@ const Quiz = lazy(() => import('./pages/Quiz'));
 const Upload = lazy(() => import('./pages/Upload'));
 const CreateSet = lazy(() => import('./pages/CreateSet'));
 const SignIn = lazy(() => import('./pages/SignIn'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 
 /** HashRouter so the built site works from any static host with no server rewrite rules. */
 export default function App() {
@@ -24,6 +25,9 @@ export default function App() {
           {/* The only route reachable signed out — and it renders without the
               app chrome, since there is no app to navigate yet. */}
           <Route path="/account" element={<SignIn />} />
+
+          {/* Reached from an emailed link, necessarily while signed out. */}
+          <Route path="/reset" element={<ResetPassword />} />
 
           <Route
             element={

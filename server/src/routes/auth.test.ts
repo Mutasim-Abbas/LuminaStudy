@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import jwt from 'jsonwebtoken';
 import { buildApp } from '../app.js';
 import { peekCaptchaAnswer } from '../lib/captcha.js';
+import { peekLastEmail } from '../lib/mailer.js';
 import { db } from '../db.js';
 
 /** Must match the JWT_SECRET injected by vitest.config.ts. */
@@ -19,7 +20,9 @@ beforeEach(async () => {
   // Every table, not just the obvious two: leftover login_attempts or ai_usage
   // rows leak failure counts and quota between tests, which silently changes
   // what later assertions are actually measuring.
-  db.exec('DELETE FROM study_sets; DELETE FROM ai_usage; DELETE FROM login_attempts; DELETE FROM users;');
+  db.exec(
+    'DELETE FROM study_sets; DELETE FROM ai_usage; DELETE FROM login_attempts; DELETE FROM password_resets; DELETE FROM users;',
+  );
   if (!app) app = await buildApp();
 });
 
@@ -582,5 +585,212 @@ describe('per-user isolation', () => {
     await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
     const rows = db.prepare('SELECT COUNT(*) AS n FROM study_sets').get() as { n: number };
     expect(rows.n).toBe(0);
+  });
+});
+
+describe('password reset', () => {
+  /** Pull the raw token out of the email the server just "sent". */
+  function tokenFromEmail(): string {
+    const mail = peekLastEmail();
+    if (!mail) throw new Error('no email was sent');
+    const match = mail.text.match(/token=([A-Za-z0-9_-]+)/);
+    if (!match) throw new Error(`no reset token in email body: ${mail.text}`);
+    return decodeURIComponent(match[1]!);
+  }
+
+  async function requestReset(email = CREDS.email) {
+    return app.inject({ method: 'POST', url: '/api/auth/forgot', payload: { email } });
+  }
+
+  it('does not reveal whether an account exists', async () => {
+    await signup();
+    const known = await requestReset(CREDS.email);
+    const unknown = await requestReset('nobody@example.com');
+
+    expect(known.statusCode).toBe(unknown.statusCode);
+    expect(known.json()).toEqual(unknown.json());
+  });
+
+  it('sends no email for an address with no account', async () => {
+    await signup();
+    await requestReset(CREDS.email);
+    const afterKnown = peekLastEmail()?.to;
+    await requestReset('nobody@example.com');
+    // The last email is still the one from the known address — no new send.
+    expect(peekLastEmail()?.to).toBe(afterKnown);
+  });
+
+  it('lets a user set a new password and signs them in', async () => {
+    await signup();
+    await requestReset();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token: tokenFromEmail(), password: 'a brand new password' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().user.email).toBe(CREDS.email);
+    expect(cookieFrom(res)).toContain('lumina_session=');
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: CREDS.email, password: 'a brand new password' },
+    });
+    expect(login.statusCode).toBe(200);
+  });
+
+  it('invalidates the old password', async () => {
+    await signup();
+    await requestReset();
+    await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token: tokenFromEmail(), password: 'a brand new password' },
+    });
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: CREDS,
+    });
+    expect(login.statusCode).toBe(401);
+  });
+
+  it('rejects a token that has already been used', async () => {
+    await signup();
+    await requestReset();
+    const token = tokenFromEmail();
+
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token, password: 'first new password' },
+    });
+    expect(first.statusCode).toBe(200);
+
+    const replay = await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token, password: 'second new password' },
+    });
+    expect(replay.statusCode).toBe(400);
+    expect(replay.json().error).toBe('invalid_token');
+  });
+
+  it('invalidates an earlier link when a new one is requested', async () => {
+    await signup();
+    await requestReset();
+    const stale = tokenFromEmail();
+    await requestReset();
+    const fresh = tokenFromEmail();
+    expect(fresh).not.toBe(stale);
+
+    const usingStale = await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token: stale, password: 'should not work' },
+    });
+    expect(usingStale.statusCode).toBe(400);
+  });
+
+  it('rejects an expired token', async () => {
+    await signup();
+    await requestReset();
+    const token = tokenFromEmail();
+
+    // Age the row past its TTL rather than waiting 30 real minutes.
+    db.prepare('UPDATE password_resets SET expires_at = ?').run(Date.now() - 1000);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token, password: 'a brand new password' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('invalid_token');
+  });
+
+  it('rejects a forged token', async () => {
+    await signup();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token: 'not-a-real-token', password: 'a brand new password' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('stores only a hash of the token, never the token itself', async () => {
+    await signup();
+    await requestReset();
+    const token = tokenFromEmail();
+    const rows = db.prepare('SELECT token_hash FROM password_resets').all() as { token_hash: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.token_hash).not.toBe(token);
+    expect(rows[0]!.token_hash).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('enforces the minimum password length', async () => {
+    await signup();
+    await requestReset();
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token: tokenFromEmail(), password: 'short' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('invalid_request');
+  });
+
+  it('does not burn the token when the new password is rejected', async () => {
+    await signup();
+    await requestReset();
+    const token = tokenFromEmail();
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token, password: 'short' },
+    });
+
+    // The link must still work — a typo shouldn't cost the user their one shot.
+    const retry = await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token, password: 'a long enough password' },
+    });
+    expect(retry.statusCode).toBe(200);
+  });
+
+  it('clears a sign-in lockout so the user is not still locked out', async () => {
+    await signup();
+    // Must clear the 8-char minimum: a shorter password fails validation before
+    // the attempt is ever recorded, so it would never build toward a lockout.
+    for (let i = 0; i < 5; i++) {
+      await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: CREDS.email, password: 'wrong password here' },
+      });
+    }
+    const locked = await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS });
+    expect(locked.statusCode).toBe(429);
+
+    await requestReset();
+    await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token: tokenFromEmail(), password: 'a brand new password' },
+    });
+
+    const login = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: CREDS.email, password: 'a brand new password' },
+    });
+    expect(login.statusCode).toBe(200);
   });
 });

@@ -159,6 +159,30 @@ export async function signOut(): Promise<void> {
   await request('/api/auth/logout', { method: 'POST' });
 }
 
+/**
+ * Ask for a reset link.
+ *
+ * Resolves the same way whether or not the address has an account — the server
+ * deliberately refuses to say, so that this endpoint can't be used to discover
+ * who has one. The UI must therefore show the same confirmation either way.
+ */
+export async function requestPasswordReset(email: string): Promise<string> {
+  const { message } = await request<{ ok: boolean; message: string }>('/api/auth/forgot', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+  return message;
+}
+
+/** Redeem a reset link. On success the user is signed in already. */
+export async function resetPassword(token: string, password: string): Promise<AccountUser> {
+  const { user } = await request<{ user: AccountUser }>('/api/auth/reset', {
+    method: 'POST',
+    body: JSON.stringify({ token, password }),
+  });
+  return user;
+}
+
 /** Current session, or null when signed out. Never throws for "not signed in". */
 export async function fetchCurrentUser(): Promise<AccountUser | null> {
   try {

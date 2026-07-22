@@ -72,6 +72,22 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_login_attempts ON login_attempts(email, created_at DESC);
+
+  -- Password-reset tokens. Only a SHA-256 hash of each token is stored, exactly
+  -- like a password: whoever holds the raw token can take over the account, so a
+  -- database leak must not hand out working reset links. Rows are kept after use
+  -- (marked via used_at) rather than deleted, so a replayed link is rejected
+  -- explicitly instead of looking like an unknown token.
+  CREATE TABLE IF NOT EXISTS password_resets (
+    id         TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    used_at    INTEGER
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id, created_at DESC);
 `);
 
 /**
