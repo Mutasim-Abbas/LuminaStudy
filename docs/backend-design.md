@@ -82,3 +82,57 @@ zero-downtime deploys), or when backup/restore through Litestream becomes the
 painful part. The schema below sticks to portable types so that move stays
 mechanical.
 
+## 3. Database (SQLite)
+
+Conventions, matching what is already there: times are `INTEGER` epoch ms (the
+API and frontend already speak epoch ms); JSON is stored as `TEXT`; booleans
+are `INTEGER` 0/1; ids are `TEXT` — client-generated for anything a device can
+create offline (sets, events), `randomUUID()` otherwise. Every user-owned table
+has `user_id … ON DELETE CASCADE`, so deleting an account deletes everything.
+`foreign_keys = ON` and WAL mode are already set per connection.
+
+### Existing tables (changes marked NEW)
+
+```sql
+CREATE TABLE users (
+  id             TEXT PRIMARY KEY,
+  email          TEXT NOT NULL UNIQUE,          -- stored lower-cased
+  name           TEXT NOT NULL DEFAULT '',
+  password_hash  TEXT NOT NULL,
+  token_version  INTEGER NOT NULL DEFAULT 0,    -- NEW: bump to revoke all sessions
+  created_at     INTEGER NOT NULL
+);
+
+CREATE TABLE study_sets (
+  id           TEXT PRIMARY KEY,                -- client-generated
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  subject      TEXT NOT NULL DEFAULT '',
+  title        TEXT NOT NULL,
+  description  TEXT NOT NULL DEFAULT '',
+  data         TEXT NOT NULL,                   -- JSON: { cards, quiz, summary, highlights }
+  mastery      INTEGER NOT NULL DEFAULT 0,
+  version      INTEGER NOT NULL DEFAULT 1,      -- NEW: optimistic concurrency
+  deleted_at   INTEGER,                         -- NEW: tombstone, so deletes sync
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL
+);
+CREATE INDEX idx_study_sets_user ON study_sets(user_id, updated_at DESC);
+
+CREATE TABLE ai_usage (
+  id                 TEXT PRIMARY KEY,
+  user_id            TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  model              TEXT NOT NULL DEFAULT '',  -- NEW
+  input_chars        INTEGER NOT NULL DEFAULT 0,-- NEW
+  prompt_tokens      INTEGER,                   -- NEW: cost tracking
+  completion_tokens  INTEGER,                   -- NEW
+  created_at         INTEGER NOT NULL
+);
+
+-- login_attempts and password_resets: unchanged.
+```
+
+Sets stay one document (`data`). The app always reads and writes a set whole,
+cards are never queried on their own, and per-card state lives in
+`card_schedules` below — so splitting cards into rows would add joins and buy
+nothing.
+
