@@ -244,3 +244,12 @@ GET /api/sync?since=<cursor>
 No `since` means "everything" (first sign-in on a device). The cursor is the
 server's own clock, never the device's.
 
+### Study sets — `/api/sets`
+
+| Method | Path    | Status   | Notes                                                                                                                                  |
+| ------ | ------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/`     | existing | Kept for simple reads                                                                                                                  |
+| PUT    | `/:id`  | changed  | Send `If-Match: <version>`. Stale version → `409 { error: 'conflict', current }` so the client can keep both or pick one — fixes bug 4 |
+| POST   | `/sync` | changed  | First-sign-in import. Skips ids that have a tombstone                                                                                  |
+| DELETE | `/:id`  | changed  | Sets `deleted_at` instead of removing the row                                                                                          |
+
