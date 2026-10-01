@@ -302,3 +302,15 @@ token counts in `ai_usage`, so cost per user is visible.
 - **Monitoring:** Sentry (or similar) for errors; Fastify's structured logs go
   to Railway's log view.
 
+## 7. Build order
+
+Each step is a separate, shippable change:
+
+1. Fix proxy trust, add server tests to CI, apply the `npm audit` fixes.
+2. Versioned migrations via `PRAGMA user_version`; Litestream in the image.
+3. `token_version`: revoke on reset, `logout-all`, password-confirmed delete.
+4. Set versions + tombstones + `GET /api/sync`.
+5. `card_schedules` + `study_events` + `/api/events` + `/api/activity`, and
+   switch the frontend's SRS/activity from localStorage-only to synced.
+6. `user_documents` for planner, grade calculator and name.
+7. `/api/auth/export`, then deploy (Railway + bucket + Resend domain).
