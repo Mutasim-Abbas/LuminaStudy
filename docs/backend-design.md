@@ -283,3 +283,22 @@ token counts in `ai_usage`, so cost per user is visible.
 3. **Merge rules:** sets and documents use versions (conflict → ask);
    schedules are per card, newest `last_reviewed_at` wins; events are a union.
 
+## 6. Operations
+
+- **Hosting:** Railway container (Dockerfile exists), one replica, volume at
+  `/data`.
+- **Client IPs:** the server trusts proxies by address (`TRUST_PROXY`, default
+  private ranges in production, none otherwise) — fixes bug 1 without letting a
+  client spoof its IP through `X-Forwarded-For`.
+- **Backups:** Litestream runs alongside the server in the container and
+  replicates `lumina.db` to an S3-compatible bucket (Cloudflare R2, Backblaze
+  B2 or S3). On boot, if the volume is empty, it restores the latest copy
+  first. Test a restore before launch — an untested backup is not a backup.
+- **Tests:** unchanged — `node:sqlite` with `:memory:`, zero setup. CI gets a
+  server job — fixes bug 5.
+- **Housekeeping:** expired `login_attempts` and `password_resets` are already
+  pruned on each login / reset request. The new `study_events` table grows
+  forever by design; a few hundred bytes per review is fine for years.
+- **Monitoring:** Sentry (or similar) for errors; Fastify's structured logs go
+  to Railway's log view.
+
