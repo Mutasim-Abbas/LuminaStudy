@@ -17,6 +17,8 @@ const schema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
   CORS_ORIGIN: z.string().url().default('http://localhost:5174'),
+  // Addresses of the reverse proxies in front of the server (see `trustProxy`).
+  TRUST_PROXY: z.string().optional(),
   GEMINI_API_KEY: cleanSecret,
   GEMINI_MODEL: z.string().default('gemini-2.0-flash'),
   // Fallback: any OpenAI-compatible provider (Groq, OpenRouter, …).
@@ -57,6 +59,32 @@ if (!jwtSecret || jwtSecret.length < 32) {
   console.warn('[env] JWT_SECRET not set — using an ephemeral dev secret (logins reset on restart).');
 }
 
+/**
+ * Proxies to trust when working out the client's IP, which every rate limit is
+ * keyed on. Behind the host's proxy the socket address is the proxy's, so
+ * trusting none puts every user in one shared bucket; trusting everything lets
+ * a client pick its own IP by sending X-Forwarded-For.
+ *
+ * Trust is by the proxy's *address*: Fastify walks X-Forwarded-For from the
+ * right and stops at the first address outside these ranges, which is the
+ * client. A client can prepend whatever it likes; the walk never reaches it.
+ * (A hop count can't work — Fastify 5.12 ignores one, since it cannot check
+ * that the immediate peer really is a proxy.)
+ *
+ * Production defaults to the private ranges a platform's internal proxy
+ * connects from, CGNAT included. Nothing on the public internet can reach the
+ * container from one of those. Development trusts nothing.
+ */
+const PRIVATE_RANGES = ['loopback', 'linklocal', 'uniquelocal', '100.64.0.0/10'];
+const trustProxyList = raw.TRUST_PROXY?.split(',')
+  .map((v) => v.trim())
+  .filter(Boolean);
+const trustProxy: string[] | false = trustProxyList?.length
+  ? trustProxyList
+  : raw.NODE_ENV === 'production'
+    ? PRIVATE_RANGES
+    : false;
+
 // GROQ_API_KEY is an accepted alias for OPENAI_COMPAT_API_KEY.
 const compatKey = raw.OPENAI_COMPAT_API_KEY ?? raw.GROQ_API_KEY;
 
@@ -64,6 +92,7 @@ export const env = {
   ...raw,
   OPENAI_COMPAT_API_KEY: compatKey,
   JWT_SECRET: jwtSecret,
+  trustProxy,
   /** Which provider to use: OpenAI-compatible wins when its key is set. */
   aiProvider: (compatKey ? 'openai-compat' : 'gemini') as 'openai-compat' | 'gemini',
   /** True when any provider has a usable key. */
