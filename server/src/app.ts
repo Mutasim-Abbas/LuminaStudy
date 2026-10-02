@@ -27,8 +27,8 @@ const CLIENT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../dist'
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: env.NODE_ENV !== 'test',
-    // Don't trust client-provided proxy headers unless explicitly configured.
-    trustProxy: false,
+    // Trust known proxy addresses only, never the client's own headers.
+    trustProxy: env.trustProxy,
     bodyLimit: 1_000_000, // 1 MB — generous for text, stops oversized payloads.
   });
 

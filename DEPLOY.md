@@ -42,6 +42,10 @@ mount path has to match.
 
 `PORT` is injected by the platform — do not set it.
 
+`TRUST_PROXY` defaults in production to the private address ranges a
+platform's internal proxy connects from. Only set it if step 4 shows it is
+wrong.
+
 Generate a secret with:
 
 ```
@@ -60,6 +64,13 @@ curl https://<your-domain>/api/health
 Expect `{"ok":true,"aiEnabled":true,...}`. Then sign up, sign out, sign back in,
 and confirm the account survives a redeploy — that last step is what proves the
 volume is actually mounted.
+
+Then check the server sees real client IPs, since every rate limit is keyed on
+them. In Railway's logs, the `remoteAddress` on your own requests should be your
+public IP (compare with https://ifconfig.me). If it is the same address on
+every request no matter where you connect from, that is Railway's proxy and it
+is not in the trusted ranges: set `TRUST_PROXY` to that address (or its range)
+and redeploy. Left wrong, all users share one sign-in rate limit.
 
 ## Notes
 

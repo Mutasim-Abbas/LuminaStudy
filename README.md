@@ -110,6 +110,7 @@ that file documents every option with empty values.
 | `RESEND_API_KEY`  | in production   | Sends password-reset email                  |
 | `APP_URL`         | no              | Base URL the reset link points at           |
 | `CORS_ORIGIN`     | no              | Locks the API to the frontend origin        |
+| `TRUST_PROXY`     | no              | Proxy addresses to trust for client IPs     |
 | `PORT`            | no              | Defaults to `3001`                          |
 
 In development a temporary `JWT_SECRET` is generated at startup if you leave it
