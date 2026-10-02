@@ -42,6 +42,10 @@ mount path has to match.
 
 `PORT` is injected by the platform — do not set it.
 
+`TRUST_PROXY` defaults in production to the private address ranges a
+platform's internal proxy connects from. Only set it if step 4 shows it is
+wrong.
+
 Generate a secret with:
 
 ```
