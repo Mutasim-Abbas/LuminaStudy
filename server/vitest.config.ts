@@ -1,6 +1,10 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  // An inline (empty) PostCSS config stops Vite searching parent directories
+  // and loading the frontend's, which needs Tailwind — a package only the root
+  // installs. Without this the suite fails on a server-only checkout, as in CI.
+  css: { postcss: {} },
   test: {
     environment: 'node',
     // A fresh process per file, so each suite gets its own SQLite handle.
