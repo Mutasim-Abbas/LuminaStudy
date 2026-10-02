@@ -58,4 +58,11 @@ describe('client IP behind the proxy', () => {
     const before = await remaining('203.0.113.20');
     expect(await remaining('203.0.113.20, 100.64.0.5')).toBe(before - 1);
   });
+
+  it('does not let a client that connects directly choose its IP', async () => {
+    const direct = '203.0.113.99';
+    const before = await remaining('198.51.100.1', direct);
+    // Same claimed address, different header: still the socket's bucket.
+    expect(await remaining('198.51.100.2', direct)).toBe(before - 1);
+  });
 });
