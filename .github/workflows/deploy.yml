@@ -39,6 +39,28 @@ jobs:
         with:
           path: dist
 
+  # The server isn't on Pages, but it ships from the same commit — a broken
+  # backend shouldn't get a green build.
+  server:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # node:sqlite is only stable from Node 24 (see server/package.json).
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
   deploy:
     needs: build
     runs-on: ubuntu-latest
