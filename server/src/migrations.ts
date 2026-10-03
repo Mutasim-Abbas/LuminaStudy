@@ -74,4 +74,18 @@ export const MIGRATIONS: Migration[] = [
         CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id, created_at DESC);
       `),
   },
+  {
+    version: 2,
+    name: 'users.name',
+    up: (db) => {
+      // Before versioning, this column was added by a startup check, so some
+      // version-0 databases already have it. SQLite has no ADD COLUMN IF NOT
+      // EXISTS; look first. A NOT NULL column with a default is safe to add to
+      // a table that has rows.
+      const columns = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+      if (!columns.some((c) => c.name === 'name')) {
+        db.exec("ALTER TABLE users ADD COLUMN name TEXT NOT NULL DEFAULT ''");
+      }
+    },
+  },
 ];
