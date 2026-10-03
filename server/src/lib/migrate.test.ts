@@ -29,4 +29,11 @@ describe('migrate', () => {
     expect(schemaVersion(db)).toBe(2);
     expect(tables(db)).toEqual(['a', 'b']);
   });
+
+  it('applies nothing to a database that is already current', () => {
+    const db = freshDb();
+    migrate(db, MIGRATIONS);
+    expect(migrate(db, MIGRATIONS)).toEqual([]);
+    expect(schemaVersion(db)).toBe(2);
+  });
 });
