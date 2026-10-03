@@ -57,4 +57,13 @@ describe('openDatabase', () => {
     expect(db.prepare('SELECT title FROM study_sets').all()).toEqual([{ title: 'Biology' }]);
     db.close();
   });
+
+  it('adds users.name to an old database that never got it', () => {
+    const path = tempDbPath();
+    preVersioningDb(path, { withName: false });
+
+    const db = openDatabase(path);
+    expect(db.prepare('SELECT name FROM users').all()).toEqual([{ name: '' }]);
+    db.close();
+  });
 });
