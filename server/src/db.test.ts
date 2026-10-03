@@ -66,4 +66,21 @@ describe('openDatabase', () => {
     expect(db.prepare('SELECT name FROM users').all()).toEqual([{ name: '' }]);
     db.close();
   });
+
+  it('creates a new database file at the latest version, with every table', () => {
+    const path = tempDbPath();
+    const db = openDatabase(path);
+    expect(schemaVersion(db)).toBe(MIGRATIONS.length);
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+      .all() as { name: string }[];
+    expect(tables.map((t) => t.name)).toEqual([
+      'ai_usage',
+      'login_attempts',
+      'password_resets',
+      'study_sets',
+      'users',
+    ]);
+    db.close();
+  });
 });
