@@ -26,6 +26,18 @@ export function schemaVersion(db: DatabaseSync): number {
 /** Applies every migration above the database's version, in order. Returns the versions applied. */
 export function migrate(db: DatabaseSync, migrations: readonly Migration[]): number[] {
   const current = schemaVersion(db);
+  const latest = migrations.at(-1)?.version ?? 0;
+
+  // A database written by a newer build — typically after rolling a deploy
+  // back. This code doesn't know that schema, so writing to it could corrupt
+  // data the newer code relies on. Refuse rather than guess.
+  if (current > latest) {
+    throw new Error(
+      `Database schema is at version ${current}, but this build only knows up to ${latest}. ` +
+        'Deploy a build that includes the newer migrations.',
+    );
+  }
+
   const applied: number[] = [];
 
   for (const migration of migrations) {
