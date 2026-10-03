@@ -52,4 +52,19 @@ describe('migrate', () => {
     expect(tables(db)).toEqual([]);
     expect(schemaVersion(db)).toBe(0);
   });
+
+  it('keeps earlier migrations when a later one fails', () => {
+    const db = freshDb();
+    const failing: Migration = {
+      version: 2,
+      name: 'fails',
+      up: () => {
+        throw new Error('boom');
+      },
+    };
+    expect(() => migrate(db, [MIGRATIONS[0]!, failing])).toThrow('boom');
+    // Migration 1 committed on its own, so the next boot resumes at 2.
+    expect(tables(db)).toEqual(['a']);
+    expect(schemaVersion(db)).toBe(1);
+  });
 });
