@@ -74,4 +74,15 @@ describe('migrate', () => {
     expect(() => migrate(db, MIGRATIONS)).toThrow(/version 3.*only knows up to 2/);
     expect(tables(db)).toEqual([]);
   });
+
+  it.each([
+    ['a gap', [MIGRATIONS[0]!, { ...MIGRATIONS[1]!, version: 3 }]],
+    ['a repeat', [MIGRATIONS[0]!, { ...MIGRATIONS[1]!, version: 1 }]],
+    ['the wrong order', [MIGRATIONS[1]!, MIGRATIONS[0]!]],
+  ])('rejects a migration list with %s before touching the database', (_case, list) => {
+    const db = freshDb();
+    expect(() => migrate(db, list)).toThrow(/is numbered/);
+    expect(tables(db)).toEqual([]);
+    expect(schemaVersion(db)).toBe(0);
+  });
 });
