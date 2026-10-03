@@ -36,4 +36,20 @@ describe('migrate', () => {
     expect(migrate(db, MIGRATIONS)).toEqual([]);
     expect(schemaVersion(db)).toBe(2);
   });
+
+  it('rolls a failing migration back completely', () => {
+    const db = freshDb();
+    const broken: Migration = {
+      version: 1,
+      name: 'half done',
+      up: (d) => {
+        d.exec('CREATE TABLE half (id INTEGER PRIMARY KEY)');
+        throw new Error('boom');
+      },
+    };
+    expect(() => migrate(db, [broken])).toThrow('boom');
+    // Neither the table it created nor the version bump survive.
+    expect(tables(db)).toEqual([]);
+    expect(schemaVersion(db)).toBe(0);
+  });
 });
