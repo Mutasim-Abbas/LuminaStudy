@@ -37,6 +37,10 @@ export function openDatabase(path: string): Database {
   // WAL improves read/write concurrency; foreign keys must be enabled per-connection.
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
+  // Litestream briefly locks the database while it checkpoints the WAL into
+  // the main file. Without a timeout a write that lands in that moment fails
+  // with SQLITE_BUSY at once; with one it waits its turn.
+  db.exec('PRAGMA busy_timeout = 5000;');
 
   // Logged so a deploy that changes the schema says so in the host's logs.
   for (const version of migrate(db, MIGRATIONS)) {
