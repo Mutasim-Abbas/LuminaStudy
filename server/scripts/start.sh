@@ -12,6 +12,13 @@ db="${DATABASE_PATH:?DATABASE_PATH must be set}"
 config="${LITESTREAM_CONFIG:-$(dirname "$0")/../litestream.yml}"
 
 if [ -z "${LITESTREAM_BUCKET:-}" ]; then
+  # In production a missing bucket means every account lives on one disk with
+  # no copy. Fail the deploy loudly rather than run that way unnoticed.
+  if [ "${NODE_ENV:-}" = "production" ]; then
+    echo "start: LITESTREAM_BUCKET is not set, so the database would have no backup." >&2
+    echo "start: set the backup variables described in DEPLOY.md." >&2
+    exit 1
+  fi
   echo "start: LITESTREAM_BUCKET is not set; running without backups." >&2
   exec "$@"
 fi
