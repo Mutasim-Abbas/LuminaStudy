@@ -41,6 +41,10 @@ export function openDatabase(path: string): Database {
   // the main file. Without a timeout a write that lands in that moment fails
   // with SQLITE_BUSY at once; with one it waits its turn.
   db.exec('PRAGMA busy_timeout = 5000;');
+  // In WAL mode NORMAL stays crash-safe for the database file; it only skips
+  // an fsync on every commit, so a power cut can lose the last few commits —
+  // which Litestream has usually shipped already. The usual pairing with WAL.
+  db.exec('PRAGMA synchronous = NORMAL;');
 
   // Logged so a deploy that changes the schema says so in the host's logs.
   for (const version of migrate(db, MIGRATIONS)) {
