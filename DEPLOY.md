@@ -39,6 +39,11 @@ mount path has to match.
 | `APP_URL` | your deployed URL | Base for emailed password-reset links |
 | `RESEND_API_KEY` | your key | Password reset. **Required in production** — the console fallback is refused there |
 | `MAIL_FROM` | `Lumina Study <onboarding@resend.dev>` | Resend's shared sender only delivers to your own signup address; a verified domain is needed to email anyone else |
+| `LITESTREAM_BUCKET` | your bucket's name | Continuous database backup. **The container refuses to start in production without it** |
+| `LITESTREAM_ENDPOINT` | e.g. `https://s3.us-west-004.backblazeb2.com` | The provider's S3 endpoint. Leave unset for AWS S3 |
+| `LITESTREAM_REGION` | e.g. `us-west-004` | The bucket's region |
+| `LITESTREAM_ACCESS_KEY_ID` | the bucket key's ID | Read by Litestream only |
+| `LITESTREAM_SECRET_ACCESS_KEY` | the bucket key | Read by Litestream only |
 
 `PORT` is injected by the platform — do not set it.
 
