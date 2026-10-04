@@ -83,4 +83,14 @@ describe('openDatabase', () => {
     ]);
     db.close();
   });
+
+  it('sets up the connection the way Litestream needs it', () => {
+    const db = openDatabase(tempDbPath());
+    const pragma = (name: string) => Object.values(db.prepare(`PRAGMA ${name}`).get()!)[0];
+    expect(pragma('journal_mode')).toBe('wal');
+    expect(pragma('foreign_keys')).toBe(1);
+    expect(pragma('busy_timeout')).toBe(5000);
+    expect(pragma('synchronous')).toBe(1); // NORMAL
+    db.close();
+  });
 });
