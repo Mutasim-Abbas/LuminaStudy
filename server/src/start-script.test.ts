@@ -19,13 +19,16 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function start(env: Record<string, string>) {
+function start(env: Record<string, string>, { restoreFails = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'lumina-start-'));
   dirs.push(dir);
   const bin = join(dir, 'bin');
   mkdirSync(bin);
   const log = join(dir, 'litestream-calls');
-  writeFileSync(join(bin, 'litestream'), `#!/bin/sh\necho "$*" >> "${log}"\n`, { mode: 0o755 });
+  const failRestore = restoreFails ? '[ "$1" = restore ] && exit 1\n' : '';
+  writeFileSync(join(bin, 'litestream'), `#!/bin/sh\necho "$*" >> "${log}"\n${failRestore}`, {
+    mode: 0o755,
+  });
 
   const dbPath = join(dir, 'data', 'lumina.db');
   const result = spawnSync('sh', [SCRIPT, 'echo', 'server started'], {
@@ -79,5 +82,17 @@ describe('start script', () => {
     ]);
     // The volume's directory exists before the restore writes into it.
     expect(existsSync(dirname(run.dbPath))).toBe(true);
+  });
+
+  it('does not start the server when the restore fails', () => {
+    // A backup may exist but could not be fetched: starting anyway would serve
+    // an empty database, and users would sign up into it.
+    const run = start(
+      { NODE_ENV: 'production', LITESTREAM_BUCKET: 'lumina-backups' },
+      { restoreFails: true },
+    );
+    expect(run.status).not.toBe(0);
+    expect(run.litestream).toHaveLength(1);
+    expect(run.litestream[0]).toMatch(/^restore /);
   });
 });
