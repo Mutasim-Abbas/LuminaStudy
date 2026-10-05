@@ -8,9 +8,12 @@ import { useAuth } from '../hooks/useAuth';
  * While the session check is in flight we render a spinner rather than
  * redirecting: bouncing a signed-in user to the login screen for a few hundred
  * milliseconds on every refresh looks like being logged out at random.
+ *
+ * In guest mode (no backend, e.g. the GitHub Pages build) the gate stays open:
+ * there is nothing to sign in to, and the app is local-first anyway.
  */
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, guest } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -25,7 +28,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!user) {
+  if (!user && !guest) {
     // Remember where they were headed so sign-in can send them back.
     return <Navigate to="/account" replace state={{ from: location.pathname }} />;
   }

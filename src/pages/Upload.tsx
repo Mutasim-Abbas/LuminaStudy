@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../hooks/useAuth';
 import { useLocalStorage } from '../hooks/useLocalStorage';
 import { type StudySet } from '../data/studySets';
 import {
@@ -59,6 +60,7 @@ function toStudySet(gen: GeneratedSet): StudySet {
 
 export default function Upload() {
   const navigate = useNavigate();
+  const { guest } = useAuth();
   const [, setStudySets] = useLocalStorage<StudySet[]>('lumina.studySets', []);
 
   const [phase, setPhase] = useState<Phase>('idle');
@@ -442,8 +444,22 @@ export default function Upload() {
           </div>
         )}
 
+        {/* No backend at all (the GitHub Pages build): generation can't work. */}
+        {guest && phase !== 'done' && (
+          <div className="px-stack-md pt-3">
+            <p className="rounded-lg bg-surface-container-low px-3 py-2 font-label-sm text-label-sm text-on-surface-variant">
+              AI generation needs the Lumina server, which this version of the site runs without.
+              You can still{' '}
+              <Link to="/create" className="font-medium text-primary underline">
+                build a set by hand
+              </Link>
+              .
+            </p>
+          </div>
+        )}
+
         {/* AI-not-configured hint */}
-        {aiEnabled === false && phase !== 'done' && (
+        {!guest && aiEnabled === false && phase !== 'done' && (
           <div className="px-stack-md pt-3">
             <p className="rounded-lg bg-surface-container-low px-3 py-2 font-label-sm text-label-sm text-on-surface-variant">
               Heads up: the server has no AI key yet, so generation will fail until one is added
@@ -471,7 +487,7 @@ export default function Upload() {
             <button
               type="button"
               onClick={generate}
-              disabled={phase === 'analyzing'}
+              disabled={phase === 'analyzing' || guest}
               className="pressable rounded-full bg-primary px-6 py-3 font-label-lg text-label-lg text-on-primary shadow-sm disabled:opacity-50"
             >
               {phase === 'analyzing' ? 'Generating…' : 'Generate study set'}

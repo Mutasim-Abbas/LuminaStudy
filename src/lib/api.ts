@@ -183,14 +183,18 @@ export async function resetPassword(token: string, password: string): Promise<Ac
   return user;
 }
 
-/** Current session, or null when signed out. Never throws for "not signed in". */
-export async function fetchCurrentUser(): Promise<AccountUser | null> {
+/**
+ * Current session. Never throws. `reachable` is false when no backend answered
+ * — the static GitHub Pages build, or dev with the API off — which the app
+ * treats as guest mode rather than as "signed out" (the server answers a
+ * signed-out check with 200 and a null user).
+ */
+export async function fetchSession(): Promise<{ user: AccountUser | null; reachable: boolean }> {
   try {
     const { user } = await request<{ user: AccountUser | null }>('/api/auth/me');
-    return user;
+    return { user, reachable: true };
   } catch {
-    // Backend down or unreachable — treat as signed out rather than blocking boot.
-    return null;
+    return { user: null, reachable: false };
   }
 }
 

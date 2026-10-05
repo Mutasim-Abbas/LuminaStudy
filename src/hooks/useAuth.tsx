@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   fetchCloudSets,
-  fetchCurrentUser,
+  fetchSession,
   signIn as apiSignIn,
   signOut as apiSignOut,
   signUp as apiSignUp,
@@ -24,6 +24,11 @@ interface AuthValue {
   user: AccountUser | null;
   /** True until the initial session check finishes. */
   loading: boolean;
+  /**
+   * True when no backend answered the session check, so there is nothing to
+   * sign in to. The app then runs local-only: everything but AI and sync works.
+   */
+  guest: boolean;
   /** True while a sign-in/sign-up round trip (including sync) is running. */
   busy: boolean;
   signUp: (input: SignUpInput) => Promise<void>;
@@ -73,6 +78,7 @@ function purgeLegacySeeds(): void {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AccountUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [guest, setGuest] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Resume an existing session on boot, and pull that account's sets.
@@ -80,9 +86,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     purgeLegacySeeds();
     let cancelled = false;
     (async () => {
-      const found = await fetchCurrentUser();
+      const { user: found, reachable } = await fetchSession();
       if (cancelled) return;
       setUser(found);
+      setGuest(!reachable);
       if (found) {
         try {
           const sets = await fetchCloudSets();
@@ -155,8 +162,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, busy, signUp, signIn, signOut }),
-    [user, loading, busy, signUp, signIn, signOut],
+    () => ({ user, loading, guest, busy, signUp, signIn, signOut }),
+    [user, loading, guest, busy, signUp, signIn, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

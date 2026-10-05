@@ -159,7 +159,7 @@ function ThemeToggle() {
  * to sign in without ever blocking use of the app.
  */
 function AccountButton({ fallbackInitial, localName }: { fallbackInitial: string; localName: string }) {
-  const { user, loading } = useAuth();
+  const { user, loading, guest } = useAuth();
   // Prefer the account's name for the avatar initial, then its email.
   const initial = user ? (user.name || user.email).charAt(0).toUpperCase() : fallbackInitial;
 
@@ -169,11 +169,13 @@ function AccountButton({ fallbackInitial, localName }: { fallbackInitial: string
       title={
         user
           ? `Signed in as ${user.name || user.email}`
-          : localName
+          : guest
+            ? 'Saved in this browser'
+            : localName
             ? `${localName} — sign in to sync`
             : 'Sign in to sync'
       }
-      aria-label={user ? `Account: ${user.name || user.email}` : 'Sign in'}
+      aria-label={user ? `Account: ${user.name || user.email}` : guest ? 'Account' : 'Sign in'}
       className="pressable relative grid h-8 w-8 shrink-0 place-items-center rounded-full border-2 border-surface-container-highest bg-primary-fixed font-label-sm font-bold text-on-primary-fixed"
     >
       {initial}

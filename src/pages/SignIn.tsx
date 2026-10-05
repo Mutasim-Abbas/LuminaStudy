@@ -15,7 +15,7 @@ import { SyncIcon } from '../components/icons';
  * A hidden honeypot field sits behind it as a second, free signal.
  */
 export default function SignIn() {
-  const { user, signIn, signUp, signOut, busy } = useAuth();
+  const { user, guest, signIn, signUp, signOut, busy } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -109,6 +109,33 @@ export default function SignIn() {
 
   const inputClass =
     'w-full rounded-lg border border-surface-variant bg-surface-container-lowest px-3 py-2.5 font-body text-body-md text-on-surface transition-shadow focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';
+
+  // No backend to sign in against (the GitHub Pages build) — say so instead of
+  // showing a form that can only fail.
+  if (guest) {
+    return (
+      <div className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-16 text-center">
+        <div className="page-enter">
+          <LuminaMark size={44} />
+          <h1 className="mt-6 font-display text-headline-md text-on-surface">
+            No accounts on this version
+          </h1>
+          <p className="mt-4 font-body text-body-md text-on-surface-variant">
+            This copy of Lumina Study runs entirely in your browser. Your study sets, grades and
+            plans are saved on this device, so there&apos;s nothing to sign in to.
+          </p>
+          <div className="mt-8">
+            <Link
+              to="/"
+              className="pressable rounded-lg bg-primary px-6 py-3 font-label-lg text-label-lg text-on-primary"
+            >
+              Go to dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Already signed in — offer the way out rather than a pointless second form.
   if (user) {
