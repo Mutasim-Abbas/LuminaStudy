@@ -90,12 +90,12 @@ builds on first run, waits for the server to answer, then opens the browser.
 ## Deployment
 
 The included GitHub Actions workflow type-checks, lints, tests, and builds on
-every push to `main`, then publishes the static frontend to GitHub Pages.
+every push to `main`, then publishes the static frontend to GitHub Pages at
+https://mutasim-abbas.github.io/LuminaStudy/.
 
-Note that Pages serves the frontend only. Accounts, cloud sync, and AI
-generation all call `/api/*`, so those features need the Node server running
-and reachable — deploy `server/` to a host that can run Node 22.5+ and point
-`CORS_ORIGIN` at wherever the frontend is served from.
+Pages has no backend, so that build runs in guest mode: no sign-in, everything
+is saved in the browser, and AI generation is switched off. Accounts, cloud
+sync, and AI need the Node server — see [DEPLOY.md](DEPLOY.md).
 
 ## Environment variables
 

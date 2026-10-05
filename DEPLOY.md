@@ -3,9 +3,10 @@
 The app is one Node process that serves both the API and the built frontend, so
 it needs a host that runs a **long-lived server with a persistent disk**.
 
-Static hosts (GitHub Pages, Netlify, Vercel's static output) cannot run it. The
-page would load, but sign-in, sync and AI generation all call `/api/*`, which
-would not exist. Serverless hosts are also unsuitable as-is: the SQLite database
+Static hosts (GitHub Pages, Netlify, Vercel's static output) cannot run the full
+app: sign-in, sync and AI generation all call `/api/*`, which would not exist.
+The GitHub Pages build still works, in guest mode — no accounts, data stays in
+the browser, AI generation off. Serverless hosts are also unsuitable as-is: the SQLite database
 is a file, and a platform with an ephemeral filesystem discards every account
 and study set on each redeploy.
 
