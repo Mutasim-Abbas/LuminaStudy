@@ -2,7 +2,8 @@
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-// Served from the root of the backend (one server), so base is always '/'.
+// Served from the root of the backend (one server), so base is '/'. The GitHub
+// Pages build overrides it with --base=/LuminaStudy/ (see deploy.yml).
 export default defineConfig(() => ({
   base: '/',
   plugins: [react()],

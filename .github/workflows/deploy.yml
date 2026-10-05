@@ -31,7 +31,8 @@ jobs:
       - run: npx tsc --noEmit
       - run: npm run lint
       - run: npm test
-      - run: npm run build
+      # Pages serves the site from /LuminaStudy/, not the domain root.
+      - run: npm run build -- --base=/LuminaStudy/
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
