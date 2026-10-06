@@ -46,12 +46,24 @@ the whole app runs from one process on one port.
 
 ## Storage
 
-SQLite via Node's built-in `node:sqlite` (no native compilation), WAL mode,
-foreign keys on. Tables: `users`, `study_sets`, `ai_usage` (sliding-window
-generation quota), `login_attempts` (per-account lockout), `password_resets`
-(hashed single-use reset tokens). Additive schema
-changes are applied as migrations at startup, so existing databases upgrade in
-place.
+SQLite via Node's built-in `node:sqlite` (no native compilation): WAL mode,
+foreign keys on, `synchronous = NORMAL`, and a 5-second busy timeout so writes
+wait out Litestream's checkpoints instead of failing. Tables: `users`,
+`study_sets`, `ai_usage` (sliding-window generation quota), `login_attempts`
+(per-account lockout), `password_resets` (hashed single-use reset tokens).
+
+**Migrations.** The schema lives in `src/migrations.ts` as a numbered list, and
+the database's version in SQLite's own `PRAGMA user_version`. On startup the
+server applies every migration above that number, each in one transaction with
+its version bump, and logs what it ran. It refuses to open a database written
+by a newer build. To change the schema, append a migration with the next
+number — never edit one that has shipped, because live databases will not run
+it again.
+
+**Backups.** In the container the server runs under Litestream
+(`scripts/start.sh`, configured by `litestream.yml`), which streams every write
+to a bucket and restores the database on boot if the volume is empty. Setup and
+a restore drill are in [DEPLOY.md](../DEPLOY.md).
 
 ## Security
 

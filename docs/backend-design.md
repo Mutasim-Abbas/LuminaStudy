@@ -306,8 +306,9 @@ token counts in `ai_usage`, so cost per user is visible.
 
 Each step is a separate, shippable change:
 
-1. Fix proxy trust, add server tests to CI, apply the `npm audit` fixes.
+1. Fix proxy trust, add server tests to CI, apply the `npm audit` fixes. **Done.**
 2. Versioned migrations via `PRAGMA user_version`; Litestream in the image.
+   **Done** — the restore drill in DEPLOY.md is still to run on the live host.
 3. `token_version`: revoke on reset, `logout-all`, password-confirmed delete.
 4. Set versions + tombstones + `GET /api/sync`.
 5. `card_schedules` + `study_events` + `/api/events` + `/api/activity`, and
