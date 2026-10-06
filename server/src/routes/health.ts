@@ -6,6 +6,8 @@ export async function healthRoutes(app: FastifyInstance) {
   app.get('/api/health', async () => ({
     ok: true,
     aiEnabled: env.aiEnabled,
+    // Lets the sign-in page offer the Google button only when it will work.
+    googleSignIn: env.googleSignIn,
     provider: env.aiEnabled ? env.aiProvider : null,
     model: env.aiEnabled
       ? env.aiProvider === 'openai-compat'
