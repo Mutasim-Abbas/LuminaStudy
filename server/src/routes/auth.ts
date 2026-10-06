@@ -170,7 +170,12 @@ export async function authRoutes(app: FastifyInstance) {
     const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
 
     // Hash even when the user is unknown, so response time doesn't reveal it.
-    const ok = await verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
+    // Accounts made through Google have no password (an empty hash); they get
+    // the same hashing work and the same answer as a wrong password, so this
+    // reveals nothing about how an account was created.
+    const ok =
+      (await verifyPassword(password, row?.password_hash || DUMMY_HASH)) &&
+      Boolean(row?.password_hash);
     if (!row || !ok) {
       recordLoginFailure(email, now);
       const after = loginLockout(email, now);
