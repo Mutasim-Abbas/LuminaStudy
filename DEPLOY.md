@@ -99,6 +99,23 @@ every request no matter where you connect from, that is Railway's proxy and it
 is not in the trusted ranges: set `TRUST_PROXY` to that address (or its range)
 and redeploy. Left wrong, all users share one sign-in rate limit.
 
+Finally, prove the backup restores — an untested backup is not a backup. The
+first log lines should come from Litestream, reporting that it is replicating
+the database to the bucket. Then, from a shell in the running
+container (`railway ssh`), restore a copy next to the live database and count
+the accounts in it:
+
+```
+cd /app/server
+litestream restore -config litestream.yml -o /tmp/restore-check.db "$DATABASE_PATH"
+node -e "const {DatabaseSync}=require('node:sqlite'); console.log(new DatabaseSync('/tmp/restore-check.db').prepare('SELECT count(*) AS users FROM users').get())"
+```
+
+The count should match the live one. This touches nothing in use. Before real
+users arrive, also run the full drill once: attach a fresh, empty volume at
+`/data` and redeploy. The start script should restore the database from the
+bucket on boot, and the test account should still sign in.
+
 ## Notes
 
 - **Node 24 is required**, not a preference: `node:sqlite` is stable there and
