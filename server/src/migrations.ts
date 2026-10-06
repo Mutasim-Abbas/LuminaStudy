@@ -88,4 +88,21 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 3,
+    name: 'users.google_sub',
+    up: (db) =>
+      // Google's stable account id (the ID token's `sub`), never its email,
+      // which a Google account can change. SQLite can't add a UNIQUE column, so
+      // uniqueness is a separate index; it allows any number of NULLs.
+      //
+      // Accounts created through Google have no password. SQLite can only drop
+      // the NOT NULL on password_hash by rebuilding `users`, and with foreign
+      // keys on, dropping the old table would cascade-delete every study set.
+      // So a password-less account stores an empty hash instead.
+      db.exec(`
+        ALTER TABLE users ADD COLUMN google_sub TEXT;
+        CREATE UNIQUE INDEX idx_users_google_sub ON users(google_sub);
+      `),
+  },
 ];
