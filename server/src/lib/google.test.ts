@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { fakeGoogle } from '../testing/fakeGoogle.js';
 import {
   createAuthRequest,
   exchangeCode,
   GOOGLE_AUTH_URL,
   GOOGLE_TOKEN_URL,
   GoogleAuthError,
+  clearSigningKeyCache,
+  verifyIdToken,
 } from './google.js';
 
 const CLIENT_ID = 'client-123.apps.googleusercontent.com';
@@ -81,5 +84,25 @@ describe('exchangeCode', () => {
       throw new TypeError('fetch failed');
     });
     await expect(exchangeCode('c', 'v', CLIENT)).rejects.toMatchObject({ reason: 'exchange_failed' });
+  });
+});
+
+describe('verifyIdToken', () => {
+  const google = fakeGoogle(CLIENT_ID);
+  const verify = (token: string, nonce = 'nonce-1') =>
+    verifyIdToken(token, { clientId: CLIENT_ID, nonce, now: Date.now() });
+
+  beforeEach(() => {
+    clearSigningKeyCache();
+    vi.stubGlobal('fetch', google.fetchImpl());
+  });
+
+  it('accepts a genuine token and returns who signed in', async () => {
+    const token = google.idToken({ nonce: 'nonce-1', email: 'Grace@Example.com' });
+    await expect(verify(token)).resolves.toEqual({
+      sub: 'google-sub-1',
+      email: 'grace@example.com',
+      name: 'Grace Hopper',
+    });
   });
 });
