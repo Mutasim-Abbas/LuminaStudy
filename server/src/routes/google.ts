@@ -134,6 +134,15 @@ export async function googleRoutes(app: FastifyInstance) {
       | undefined;
     if (linked) return signInAndGo(reply, linked);
 
+    // An account already uses this email, but isn't linked to Google. It is
+    // deliberately NOT joined automatically: anyone can sign up with a
+    // password under an address they don't own, and if Google sign-in then
+    // walked into that account, its real owner would be using an account a
+    // stranger holds the password to. Linking happens from the account page,
+    // after signing in with the password — proof of owning both.
+    const byEmail = db.prepare('SELECT id FROM users WHERE email = ?').get(identity.email);
+    if (byEmail) return fail(reply, 'account_exists');
+
     return fail(reply, 'no_account');
   });
 }
