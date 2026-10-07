@@ -1,7 +1,15 @@
-import type { FastifyInstance, FastifyReply } from 'fastify';
+import { timingSafeEqual } from 'node:crypto';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { db, type UserRow } from '../db.js';
 import { env } from '../env.js';
-import { currentUser } from '../lib/auth.js';
-import { createAuthRequest } from '../lib/google.js';
+import { currentUser, setSessionCookie, signSession } from '../lib/auth.js';
+import {
+  createAuthRequest,
+  exchangeCode,
+  GoogleAuthError,
+  verifyIdToken,
+  type GoogleIdentity,
+} from '../lib/google.js';
 
 /**
  * Sign in with Google. See lib/google.ts for the protocol; this file decides
@@ -35,6 +43,30 @@ export function fail(reply: FastifyReply, reason: string) {
   return reply.redirect(appUrl(`/account?google=${encodeURIComponent(reason)}`));
 }
 
+/** The attempt this browser started, if its cookie is present and untampered. */
+function readFlow(request: FastifyRequest): Flow | null {
+  const raw = request.cookies[FLOW_COOKIE];
+  if (!raw) return null;
+  const { valid, value } = request.unsignCookie(raw);
+  if (!valid || !value) return null;
+  try {
+    return JSON.parse(value) as Flow;
+  } catch {
+    return null;
+  }
+}
+
+function sameString(a: string, b: string): boolean {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  return x.length === y.length && timingSafeEqual(x, y);
+}
+
+function signInAndGo(reply: FastifyReply, row: UserRow) {
+  setSessionCookie(reply, signSession({ id: row.id, email: row.email, name: row.name }));
+  return reply.redirect(appUrl('/'));
+}
+
 export async function googleRoutes(app: FastifyInstance) {
   app.get('/api/auth/google', async (request, reply) => {
     if (!env.googleSignIn) {
@@ -62,5 +94,46 @@ export async function googleRoutes(app: FastifyInstance) {
       maxAge: FLOW_MAX_AGE_S,
     });
     return reply.redirect(auth.url);
+  });
+
+  app.get('/api/auth/google/callback', async (request, reply) => {
+    const query = request.query as { code?: string; state?: string; error?: string };
+    const flow = readFlow(request);
+    // One attempt, one use: whatever happens next, this cookie is spent.
+    reply.clearCookie(FLOW_COOKIE, { path: FLOW_PATH });
+
+    if (!env.googleSignIn) return fail(reply, 'unavailable');
+    // Pressing "Cancel" on Google's screen comes back as error=access_denied.
+    if (query.error) return fail(reply, 'cancelled');
+    if (!flow) return fail(reply, 'expired');
+    if (!query.code || !query.state || !sameString(query.state, flow.state)) {
+      return fail(reply, 'failed');
+    }
+
+    let identity: GoogleIdentity;
+    try {
+      const idToken = await exchangeCode(query.code, flow.codeVerifier, {
+        clientId: env.GOOGLE_CLIENT_ID!,
+        clientSecret: env.GOOGLE_CLIENT_SECRET!,
+        redirectUri: env.googleRedirectUri,
+      });
+      identity = await verifyIdToken(idToken, {
+        clientId: env.GOOGLE_CLIENT_ID!,
+        nonce: flow.nonce,
+        now: Date.now(),
+      });
+    } catch (err) {
+      if (!(err instanceof GoogleAuthError)) throw err;
+      request.log.warn({ reason: err.reason, detail: err.message }, 'google sign-in refused');
+      return fail(reply, err.reason === 'email_unverified' ? 'email_unverified' : 'failed');
+    }
+
+    // Keyed on Google's account id, which never changes — not on the email.
+    const linked = db.prepare('SELECT * FROM users WHERE google_sub = ?').get(identity.sub) as
+      | UserRow
+      | undefined;
+    if (linked) return signInAndGo(reply, linked);
+
+    return fail(reply, 'no_account');
   });
 }
