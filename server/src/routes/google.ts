@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { db, type UserRow } from '../db.js';
 import { env } from '../env.js';
@@ -143,6 +143,22 @@ export async function googleRoutes(app: FastifyInstance) {
     const byEmail = db.prepare('SELECT id FROM users WHERE email = ?').get(identity.email);
     if (byEmail) return fail(reply, 'account_exists');
 
-    return fail(reply, 'no_account');
+    // New to Lumina: create the account. No password — an empty hash, which
+    // password sign-in always refuses (see migration 3). No CAPTCHA either:
+    // getting here took a Google account and Google's own checks.
+    const now = Date.now();
+    const row: UserRow = {
+      id: randomUUID(),
+      email: identity.email,
+      name: identity.name || identity.email.split('@')[0]!,
+      password_hash: '',
+      google_sub: identity.sub,
+      created_at: now,
+    };
+    db.prepare(
+      'INSERT INTO users (id, email, name, password_hash, google_sub, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ).run(row.id, row.email, row.name, row.password_hash, row.google_sub, row.created_at);
+    request.log.info({ userId: row.id }, 'account created with Google');
+    return signInAndGo(reply, row);
   });
 }
