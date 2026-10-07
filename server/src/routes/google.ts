@@ -68,7 +68,13 @@ function signInAndGo(reply: FastifyReply, row: UserRow) {
 }
 
 export async function googleRoutes(app: FastifyInstance) {
-  app.get('/api/auth/google', async (request, reply) => {
+  // Each start costs a cookie and each callback a round trip to Google; well
+  // above what a person clicking needs, well below a script. Lifted in tests.
+  const limit = {
+    rateLimit: { max: env.NODE_ENV === 'test' ? 10_000 : 20, timeWindow: '1 minute' },
+  };
+
+  app.get('/api/auth/google', { config: limit }, async (request, reply) => {
     if (!env.googleSignIn) {
       return reply.code(404).send({ error: 'not_configured', message: 'Google sign-in is off.' });
     }
@@ -96,7 +102,7 @@ export async function googleRoutes(app: FastifyInstance) {
     return reply.redirect(auth.url);
   });
 
-  app.get('/api/auth/google/callback', async (request, reply) => {
+  app.get('/api/auth/google/callback', { config: limit }, async (request, reply) => {
     const query = request.query as { code?: string; state?: string; error?: string };
     const flow = readFlow(request);
     // One attempt, one use: whatever happens next, this cookie is spent.
