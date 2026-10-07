@@ -135,4 +135,20 @@ describe('verifyIdToken', () => {
     const hmac = jwt.sign({ nonce: 'nonce-1' }, 'not-a-real-key', { keyid: google.kid });
     await expect(verify(hmac)).rejects.toMatchObject({ reason: 'invalid_token' });
   });
+
+  it('rejects a token from a different sign-in (nonce mismatch)', async () => {
+    const token = google.idToken({ nonce: 'someone-elses-nonce' });
+    await expect(verify(token)).rejects.toMatchObject({ reason: 'invalid_token' });
+  });
+
+  it('rejects an expired token', async () => {
+    const past = Math.floor(Date.now() / 1000) - 7200;
+    const token = google.idToken({ nonce: 'nonce-1', iat: past, exp: past + 3600 });
+    await expect(verify(token)).rejects.toMatchObject({ reason: 'invalid_token' });
+  });
+
+  it('rejects an email Google has not verified', async () => {
+    const token = google.idToken({ nonce: 'nonce-1', email_verified: false });
+    await expect(verify(token)).rejects.toMatchObject({ reason: 'email_unverified' });
+  });
 });
