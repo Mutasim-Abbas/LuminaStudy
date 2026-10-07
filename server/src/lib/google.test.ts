@@ -105,4 +105,12 @@ describe('verifyIdToken', () => {
       name: 'Grace Hopper',
     });
   });
+
+  it.each([
+    ['another app', { aud: 'someone-else.apps.googleusercontent.com' }],
+    ['another issuer', { iss: 'https://evil.example' }],
+  ])('rejects a token issued to %s', async (_case, claims) => {
+    const token = google.idToken({ nonce: 'nonce-1', ...claims });
+    await expect(verify(token)).rejects.toMatchObject({ reason: 'invalid_token' });
+  });
 });
