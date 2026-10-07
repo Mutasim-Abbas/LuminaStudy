@@ -133,6 +133,11 @@ export async function googleRoutes(app: FastifyInstance) {
       // the one that started this: someone else may have signed in since.
       const session = currentUser(request);
       if (!session || session.id !== flow.linkUserId) return fail(reply, 'signed_out');
+      // One Google account signs into one Lumina account, never two.
+      const owner = db.prepare('SELECT id FROM users WHERE google_sub = ?').get(identity.sub) as
+        | { id: string }
+        | undefined;
+      if (owner && owner.id !== session.id) return fail(reply, 'already_linked');
       db.prepare('UPDATE users SET google_sub = ? WHERE id = ?').run(identity.sub, session.id);
       request.log.info({ userId: session.id }, 'google linked to account');
       return reply.redirect(appUrl('/account?google=linked'));
