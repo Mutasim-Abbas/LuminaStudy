@@ -205,3 +205,17 @@ describe('returning to Google sign-in', () => {
     expect(db.prepare('SELECT email FROM users').all()).toEqual([{ email: 'grace@example.com' }]);
   });
 });
+
+describe('an email that already has a password account', () => {
+  it('is not joined to Google automatically', async () => {
+    // Possibly made by someone who doesn't own the address (pre-hijacking).
+    db.prepare(
+      "INSERT INTO users (id, email, name, password_hash, created_at) VALUES ('p1', 'grace@example.com', 'Grace', 'scrypt$00$00', 1)",
+    ).run();
+
+    const res = await finish(await begin());
+    expect(landing(res)).toBe('/#/account?google=account_exists');
+    expect(sessionFrom(res)).toBeUndefined();
+    expect(db.prepare('SELECT google_sub FROM users').get()).toEqual({ google_sub: null });
+  });
+});
