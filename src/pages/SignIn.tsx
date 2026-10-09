@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { ApiError, fetchCaptcha, requestPasswordReset, type Captcha } from '../lib/api';
+import {
+  ApiError,
+  fetchCaptcha,
+  getHealth,
+  GOOGLE_SIGN_IN_URL,
+  requestPasswordReset,
+  type Captcha,
+} from '../lib/api';
+import { GoogleButton } from '../components/GoogleButton';
 import { LuminaMark } from '../components/LuminaMark';
 import { SyncIcon } from '../components/icons';
 
@@ -29,6 +37,8 @@ export default function SignIn() {
   /** Set once a reset link has been requested — swaps the form for a receipt. */
   const [resetSent, setResetSent] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  /** Only offer Google when the server has a client for it. */
+  const [googleSignIn, setGoogleSignIn] = useState(false);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -54,6 +64,16 @@ export default function SignIn() {
     } finally {
       setCaptchaLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getHealth().then((h) => {
+      if (!cancelled) setGoogleSignIn(h.googleSignIn === true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Fetch a challenge when the sign-up form is shown, and none while signing in.
@@ -209,7 +229,22 @@ export default function SignIn() {
             </button>
           </div>
         ) : (
-        <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
+        <>
+        {/* Google first: one tap, no password, no CAPTCHA. */}
+        {!isForgot && googleSignIn && (
+          <div className="mt-8 flex flex-col gap-4">
+            <GoogleButton href={GOOGLE_SIGN_IN_URL} />
+            <div className="flex items-center gap-3 font-label-sm text-label-sm text-on-surface-variant">
+              <span className="h-px flex-1 bg-surface-variant" />
+              or use your email
+              <span className="h-px flex-1 bg-surface-variant" />
+            </div>
+          </div>
+        )}
+        <form
+          onSubmit={submit}
+          className={`${!isForgot && googleSignIn ? 'mt-4' : 'mt-8'} flex flex-col gap-4`}
+        >
           {/* Honeypot: off-screen and hidden from assistive tech. */}
           <div aria-hidden="true" className="absolute left-[-9999px] top-[-9999px] h-0 w-0 overflow-hidden">
             <label>
@@ -352,6 +387,7 @@ export default function SignIn() {
                   : 'Sign in'}
           </button>
         </form>
+        </>
         )}
 
         <p className="mt-6 text-center font-body text-body-md text-on-surface-variant">
