@@ -1,8 +1,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
+import { fakeGoogle } from '../testing/fakeGoogle.js';
 
 /**
- * Sign in with Google through the real routes, with no network.
+ * Sign in with Google through the real routes. Google is the fake from
+ * testing/fakeGoogle.ts: genuinely signed tokens, no network.
  *
  * The env is read once at import, so it is set before the app is loaded —
  * this file runs in its own process (pool: 'forks').
@@ -10,6 +12,7 @@ import type { FastifyInstance } from 'fastify';
 
 const CLIENT_ID = 'client-123.apps.googleusercontent.com';
 const APP_URL = 'https://lumina.example';
+const google = fakeGoogle(CLIENT_ID);
 
 let app: FastifyInstance;
 let db: (typeof import('../db.js'))['db'];
@@ -57,6 +60,41 @@ async function begin({ link = false, session }: { link?: boolean; session?: stri
   };
 }
 
+type Attempt = Awaited<ReturnType<typeof begin>>;
+
+/**
+ * Google sends the browser back. `claims` shape the ID token Google issues;
+ * `query` replaces the callback's query string; `cookies` what the browser sends.
+ */
+async function finish(
+  attempt: Attempt,
+  opts: { claims?: Record<string, unknown>; query?: Record<string, string>; cookies?: string } = {},
+) {
+  vi.stubGlobal(
+    'fetch',
+    google.fetchImpl(() =>
+      Response.json({ id_token: google.idToken({ nonce: attempt.nonce, ...opts.claims }) }),
+    ),
+  );
+  const query = new URLSearchParams(opts.query ?? { code: 'auth-code', state: attempt.state });
+  const cookie = opts.cookies ?? attempt.flowCookie;
+  return app.inject({
+    method: 'GET',
+    url: `/api/auth/google/callback?${query}`,
+    headers: cookie ? { cookie } : {},
+  });
+}
+
+/** Where the callback sent the browser: the app, or the sign-in page with a reason. */
+function landing(res: { headers: Record<string, unknown> }): string {
+  return String(res.headers.location).replace(APP_URL, '');
+}
+
+function sessionFrom(res: { cookies: Array<{ name: string; value: string }> }) {
+  const c = res.cookies.find((x) => x.name === 'lumina_session' && x.value);
+  return c ? `lumina_session=${c.value}` : undefined;
+}
+
 describe('starting Google sign-in', () => {
   it('sends the browser to Google and keeps the attempt in a short-lived cookie', async () => {
     const { res, location } = await begin();
@@ -78,5 +116,42 @@ describe('starting Google sign-in', () => {
   it('will not start linking without a signed-in account', async () => {
     const { res } = await begin({ link: true });
     expect(res.headers.location).toBe(`${APP_URL}/#/account?google=signed_out`);
+  });
+});
+
+describe('the callback refuses', () => {
+  it('a sign-in the user cancelled on Google\'s screen', async () => {
+    const attempt = await begin();
+    const res = await finish(attempt, { query: { error: 'access_denied', state: attempt.state } });
+    expect(landing(res)).toBe('/#/account?google=cancelled');
+    expect(sessionFrom(res)).toBeUndefined();
+  });
+
+  it('a callback with no attempt cookie (expired, or started elsewhere)', async () => {
+    const attempt = await begin();
+    const res = await finish(attempt, { cookies: '' });
+    expect(landing(res)).toBe('/#/account?google=expired');
+  });
+
+  it('a state that does not match the attempt (login CSRF)', async () => {
+    const attempt = await begin();
+    const res = await finish(attempt, { query: { code: 'auth-code', state: 'attacker-state' } });
+    expect(landing(res)).toBe('/#/account?google=failed');
+    expect(sessionFrom(res)).toBeUndefined();
+  });
+
+  it('an attempt cookie that was tampered with', async () => {
+    const attempt = await begin();
+    const forged = `lumina_google=${encodeURIComponent(JSON.stringify({ state: attempt.state, nonce: 'n', codeVerifier: 'v' }))}`;
+    const res = await finish(attempt, { cookies: forged });
+    expect(landing(res)).toBe('/#/account?google=expired');
+  });
+
+  it('to leave an attempt behind that could be replayed', async () => {
+    const attempt = await begin();
+    const first = await finish(attempt);
+    // The cookie is cleared on the way back, whatever the outcome.
+    const cleared = first.cookies.find((c) => c.name === 'lumina_google');
+    expect(cleared?.value).toBe('');
   });
 });
