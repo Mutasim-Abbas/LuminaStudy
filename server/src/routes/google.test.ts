@@ -187,3 +187,21 @@ describe('signing in with Google', () => {
     expect(db.prepare('SELECT count(*) AS n FROM users').get()).toEqual({ n: 0 });
   });
 });
+
+describe('returning to Google sign-in', () => {
+  it('signs into the same account every time, without duplicating it', async () => {
+    await finish(await begin());
+    const again = await finish(await begin());
+    expect(landing(again)).toBe('/#/');
+    expect(sessionFrom(again)).toBeDefined();
+    expect(db.prepare('SELECT count(*) AS n FROM users').get()).toEqual({ n: 1 });
+  });
+
+  it('follows the Google account even after its email changes', async () => {
+    await finish(await begin());
+    const res = await finish(await begin(), { claims: { email: 'grace@navy.example' } });
+    expect(landing(res)).toBe('/#/');
+    // Matched on Google's account id, so it is still the one account.
+    expect(db.prepare('SELECT email FROM users').all()).toEqual([{ email: 'grace@example.com' }]);
+  });
+});
