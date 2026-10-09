@@ -255,4 +255,15 @@ describe('connecting Google to a password account', () => {
     expect(landing(res)).toBe('/#/account?google=signed_out');
     expect(db.prepare('SELECT google_sub FROM users').get()).toEqual({ google_sub: null });
   });
+
+  it('refuses a Google account that already opens a different account', async () => {
+    await finish(await begin()); // Grace's Google account made its own Lumina account
+    const session = passwordAccount();
+    const attempt = await begin({ link: true, session });
+    const res = await finish(attempt, { cookies: `${attempt.flowCookie}; ${session}` });
+    expect(landing(res)).toBe('/#/account?google=already_linked');
+    expect(db.prepare("SELECT google_sub FROM users WHERE id = 'p1'").get()).toEqual({
+      google_sub: null,
+    });
+  });
 });
