@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { db } from '../db.js';
+import { database } from '../db.js';
 
 /**
  * Password-reset tokens.
@@ -26,18 +26,26 @@ function hashToken(token: string): string {
  * Mint a token for a user and return the raw value — the only moment it exists
  * outside the recipient's inbox. Nothing stores it in recoverable form.
  */
-export function createResetToken(userId: string, nowMs: number): string {
-  // Any outstanding link for this account stops working the moment a new one
-  // is requested.
-  db.prepare('UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL').run(
-    nowMs,
-    userId,
-  );
-
+export async function createResetToken(userId: string, nowMs: number): Promise<string> {
   const token = randomBytes(32).toString('base64url');
-  db.prepare(
-    'INSERT INTO password_resets (id, user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?)',
-  ).run(randomUUID(), userId, hashToken(token), nowMs, nowMs + RESET_TTL_MS);
+  // One transaction, so there is never a moment with two live links — or none.
+  await database.transaction(async (tx) => {
+    // Any outstanding link for this account stops working the moment a new
+    // one is requested.
+    await tx.run(
+      'UPDATE password_resets SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+      nowMs,
+      userId,
+    );
+    await tx.run(
+      'INSERT INTO password_resets (id, user_id, token_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?)',
+      randomUUID(),
+      userId,
+      hashToken(token),
+      nowMs,
+      nowMs + RESET_TTL_MS,
+    );
+  });
   return token;
 }
 
@@ -46,10 +54,11 @@ export function createResetToken(userId: string, nowMs: number): string {
  * spent, or past its expiry. Read-only — spending it is a separate step, so a
  * failed password validation doesn't burn the user's link.
  */
-export function resolveResetToken(token: string, nowMs: number): string | null {
-  const row = db
-    .prepare('SELECT user_id, expires_at, used_at FROM password_resets WHERE token_hash = ?')
-    .get(hashToken(token)) as { user_id: string; expires_at: number; used_at: number | null } | undefined;
+export async function resolveResetToken(token: string, nowMs: number): Promise<string | null> {
+  const row = await database.get<{ user_id: string; expires_at: number; used_at: number | null }>(
+    'SELECT user_id, expires_at, used_at FROM password_resets WHERE token_hash = ?',
+    hashToken(token),
+  );
 
   if (!row) return null;
   if (row.used_at !== null) return null;
@@ -58,16 +67,18 @@ export function resolveResetToken(token: string, nowMs: number): string | null {
 }
 
 /** Mark a token spent. Called only once the new password is actually stored. */
-export function consumeResetToken(token: string, nowMs: number): void {
-  db.prepare('UPDATE password_resets SET used_at = ? WHERE token_hash = ? AND used_at IS NULL').run(
+export async function consumeResetToken(token: string, nowMs: number): Promise<void> {
+  await database.run(
+    'UPDATE password_resets SET used_at = ? WHERE token_hash = ? AND used_at IS NULL',
     nowMs,
     hashToken(token),
   );
 }
 
 /** Housekeeping: drop rows that can no longer be used either way. */
-export function pruneResetTokens(nowMs: number): void {
-  db.prepare('DELETE FROM password_resets WHERE expires_at <= ? OR used_at IS NOT NULL').run(
+export async function pruneResetTokens(nowMs: number): Promise<void> {
+  await database.run(
+    'DELETE FROM password_resets WHERE expires_at <= ? OR used_at IS NOT NULL',
     nowMs - RESET_TTL_MS,
   );
 }
