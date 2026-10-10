@@ -66,6 +66,8 @@ rest of the account.
 | `LITESTREAM_REGION` | e.g. `us-west-004` | The bucket's region |
 | `LITESTREAM_ACCESS_KEY_ID` | the bucket key's ID | Read by Litestream only |
 | `LITESTREAM_SECRET_ACCESS_KEY` | the bucket key | Read by Litestream only |
+| `GOOGLE_CLIENT_ID` | from Google Cloud | Optional — Sign in with Google (see the section below) |
+| `GOOGLE_CLIENT_SECRET` | from Google Cloud | Optional — server-side only |
 
 `PORT` is injected by the platform — do not set it.
 
