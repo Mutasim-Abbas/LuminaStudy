@@ -13,8 +13,8 @@ export const MIGRATIONS: Migration[] = [
   {
     version: 1,
     name: 'baseline schema',
-    up: (db) =>
-      db.exec(`
+    up: (tx) =>
+      tx.exec(`
         CREATE TABLE IF NOT EXISTS users (
           id            TEXT PRIMARY KEY,
           email         TEXT NOT NULL UNIQUE,
@@ -77,21 +77,21 @@ export const MIGRATIONS: Migration[] = [
   {
     version: 2,
     name: 'users.name',
-    up: (db) => {
+    up: async (tx) => {
       // Before versioning, this column was added by a startup check, so some
       // version-0 databases already have it. SQLite has no ADD COLUMN IF NOT
       // EXISTS; look first. A NOT NULL column with a default is safe to add to
       // a table that has rows.
-      const columns = db.prepare('PRAGMA table_info(users)').all() as { name: string }[];
+      const columns = await tx.all<{ name: string }>('PRAGMA table_info(users)');
       if (!columns.some((c) => c.name === 'name')) {
-        db.exec("ALTER TABLE users ADD COLUMN name TEXT NOT NULL DEFAULT ''");
+        await tx.exec("ALTER TABLE users ADD COLUMN name TEXT NOT NULL DEFAULT ''");
       }
     },
   },
   {
     version: 3,
     name: 'users.google_sub',
-    up: (db) =>
+    up: (tx) =>
       // Google's stable account id (the ID token's `sub`), never its email,
       // which a Google account can change. SQLite can't add a UNIQUE column, so
       // uniqueness is a separate index; it allows any number of NULLs.
@@ -100,7 +100,7 @@ export const MIGRATIONS: Migration[] = [
       // the NOT NULL on password_hash by rebuilding `users`, and with foreign
       // keys on, dropping the old table would cascade-delete every study set.
       // So a password-less account stores an empty hash instead.
-      db.exec(`
+      tx.exec(`
         ALTER TABLE users ADD COLUMN google_sub TEXT;
         CREATE UNIQUE INDEX idx_users_google_sub ON users(google_sub);
       `),

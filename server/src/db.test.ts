@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { openDatabase } from './db.js';
+import type { Database } from './lib/database.js';
 import { schemaVersion } from './lib/migrate.js';
+import { sqliteDatabase } from './lib/sqliteDatabase.js';
 import { MIGRATIONS } from './migrations.js';
 
 const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
@@ -15,6 +17,7 @@ const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof
  */
 
 const dirs: string[] = [];
+const open: Database[] = [];
 
 function tempDbPath(): string {
   const dir = mkdtempSync(join(tmpdir(), 'lumina-db-'));
@@ -22,58 +25,69 @@ function tempDbPath(): string {
   return join(dir, 'lumina.db');
 }
 
-afterEach(() => {
+async function openForTest(path: string): Promise<Database> {
+  const db = await openDatabase(path);
+  open.push(db);
+  return db;
+}
+
+afterEach(async () => {
+  for (const db of open.splice(0)) await db.close();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 /** A database as the server left it before migrations were versioned: tables, version 0. */
-function preVersioningDb(path: string, { withName }: { withName: boolean }) {
-  const db = new DatabaseSync(path);
-  MIGRATIONS[0]!.up(db);
-  if (withName) db.exec("ALTER TABLE users ADD COLUMN name TEXT NOT NULL DEFAULT ''");
-  db.prepare('INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)').run(
+async function preVersioningDb(path: string, { withName }: { withName: boolean }) {
+  const db = sqliteDatabase(new DatabaseSync(path));
+  await MIGRATIONS[0]!.up(db);
+  if (withName) await db.exec("ALTER TABLE users ADD COLUMN name TEXT NOT NULL DEFAULT ''");
+  await db.run(
+    'INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, ?, ?)',
     'u1',
     'ada@example.com',
     'hash',
     1,
   );
-  db.prepare(
+  await db.run(
     'INSERT INTO study_sets (id, user_id, title, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-  ).run('s1', 'u1', 'Biology', '{"cards":[],"quiz":[]}', 1, 1);
-  expect(schemaVersion(db)).toBe(0);
-  db.close();
+    's1',
+    'u1',
+    'Biology',
+    '{"cards":[],"quiz":[]}',
+    1,
+    1,
+  );
+  expect(await schemaVersion(db)).toBe(0);
+  await db.close();
 }
 
 describe('openDatabase', () => {
-  it('upgrades a database from before versioning without losing rows', () => {
+  it('upgrades a database from before versioning without losing rows', async () => {
     const path = tempDbPath();
-    preVersioningDb(path, { withName: true });
+    await preVersioningDb(path, { withName: true });
 
-    const db = openDatabase(path);
-    expect(schemaVersion(db)).toBe(MIGRATIONS.length);
-    expect(db.prepare('SELECT email, name FROM users').all()).toEqual([
+    const db = await openForTest(path);
+    expect(await schemaVersion(db)).toBe(MIGRATIONS.length);
+    expect(await db.all('SELECT email, name FROM users')).toEqual([
       { email: 'ada@example.com', name: '' },
     ]);
-    expect(db.prepare('SELECT title FROM study_sets').all()).toEqual([{ title: 'Biology' }]);
-    db.close();
+    expect(await db.all('SELECT title FROM study_sets')).toEqual([{ title: 'Biology' }]);
   });
 
-  it('adds users.name to an old database that never got it', () => {
+  it('adds users.name to an old database that never got it', async () => {
     const path = tempDbPath();
-    preVersioningDb(path, { withName: false });
+    await preVersioningDb(path, { withName: false });
 
-    const db = openDatabase(path);
-    expect(db.prepare('SELECT name FROM users').all()).toEqual([{ name: '' }]);
-    db.close();
+    const db = await openForTest(path);
+    expect(await db.all('SELECT name FROM users')).toEqual([{ name: '' }]);
   });
 
-  it('creates a new database file at the latest version, with every table', () => {
-    const path = tempDbPath();
-    const db = openDatabase(path);
-    expect(schemaVersion(db)).toBe(MIGRATIONS.length);
-    const tables = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
-      .all() as { name: string }[];
+  it('creates a new database file at the latest version, with every table', async () => {
+    const db = await openForTest(tempDbPath());
+    expect(await schemaVersion(db)).toBe(MIGRATIONS.length);
+    const tables = await db.all<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+    );
     expect(tables.map((t) => t.name)).toEqual([
       'ai_usage',
       'login_attempts',
@@ -81,28 +95,30 @@ describe('openDatabase', () => {
       'study_sets',
       'users',
     ]);
-    db.close();
   });
 
-  it('lets many accounts have no Google id, but no two share one', () => {
-    const db = openDatabase(tempDbPath());
-    const insert = db.prepare(
-      "INSERT INTO users (id, email, password_hash, created_at, google_sub) VALUES (?, ?, '', 1, ?)",
-    );
-    insert.run('u1', 'a@example.com', null);
-    insert.run('u2', 'b@example.com', null);
-    insert.run('u3', 'c@example.com', 'google-123');
-    expect(() => insert.run('u4', 'd@example.com', 'google-123')).toThrow(/UNIQUE/);
-    db.close();
+  it('lets many accounts have no Google id, but no two share one', async () => {
+    const db = await openForTest(tempDbPath());
+    const insert = (id: string, email: string, sub: string | null) =>
+      db.run(
+        "INSERT INTO users (id, email, password_hash, created_at, google_sub) VALUES (?, ?, '', 1, ?)",
+        id,
+        email,
+        sub,
+      );
+    await insert('u1', 'a@example.com', null);
+    await insert('u2', 'b@example.com', null);
+    await insert('u3', 'c@example.com', 'google-123');
+    await expect(insert('u4', 'd@example.com', 'google-123')).rejects.toThrow(/UNIQUE/);
   });
 
-  it('sets up the connection the way Litestream needs it', () => {
-    const db = openDatabase(tempDbPath());
-    const pragma = (name: string) => Object.values(db.prepare(`PRAGMA ${name}`).get()!)[0];
-    expect(pragma('journal_mode')).toBe('wal');
-    expect(pragma('foreign_keys')).toBe(1);
-    expect(pragma('busy_timeout')).toBe(5000);
-    expect(pragma('synchronous')).toBe(1); // NORMAL
-    db.close();
+  it('sets up the connection the way Litestream needs it', async () => {
+    const db = await openForTest(tempDbPath());
+    const pragma = async (name: string) =>
+      Object.values((await db.get<Record<string, unknown>>(`PRAGMA ${name}`))!)[0];
+    expect(await pragma('journal_mode')).toBe('wal');
+    expect(await pragma('foreign_keys')).toBe(1);
+    expect(await pragma('busy_timeout')).toBe(5000);
+    expect(await pragma('synchronous')).toBe(1); // NORMAL
   });
 });
