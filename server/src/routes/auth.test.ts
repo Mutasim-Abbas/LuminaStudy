@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import { buildApp } from '../app.js';
 import { peekCaptchaAnswer } from '../lib/captcha.js';
 import { peekLastEmail } from '../lib/mailer.js';
-import { db } from '../db.js';
+import { database } from '../db.js';
 
 /** Must match the JWT_SECRET injected by vitest.config.ts. */
 const TEST_SECRET = 'test-only-secret-not-used-anywhere-near-production';
@@ -20,7 +20,7 @@ beforeEach(async () => {
   // Every table, not just the obvious two: leftover login_attempts or ai_usage
   // rows leak failure counts and quota between tests, which silently changes
   // what later assertions are actually measuring.
-  db.exec(
+  await database.exec(
     'DELETE FROM study_sets; DELETE FROM ai_usage; DELETE FROM login_attempts; DELETE FROM password_resets; DELETE FROM users;',
   );
   if (!app) app = await buildApp();
@@ -121,7 +121,7 @@ describe('signup', () => {
     const res = await signup({ ...CREDS, website: 'http://spam.example' });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('failed_verification');
-    expect(db.prepare('SELECT COUNT(*) AS n FROM users').get()).toMatchObject({ n: 0 });
+    expect(await database.get('SELECT COUNT(*) AS n FROM users')).toMatchObject({ n: 0 });
   });
 
   it('rejects a sign-up with no CAPTCHA', async () => {
@@ -142,7 +142,7 @@ describe('signup', () => {
     });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('captcha_failed');
-    expect(db.prepare('SELECT COUNT(*) AS n FROM users').get()).toMatchObject({ n: 0 });
+    expect(await database.get('SELECT COUNT(*) AS n FROM users')).toMatchObject({ n: 0 });
   });
 
   it('will not let one CAPTCHA solve two sign-ups (single use)', async () => {
@@ -183,9 +183,10 @@ describe('signup', () => {
 
   it('never stores the password in plain text', async () => {
     await signup();
-    const row = db.prepare('SELECT password_hash FROM users WHERE email = ?').get(CREDS.email) as {
-      password_hash: string;
-    };
+    const row = (await database.get<{ password_hash: string }>(
+      'SELECT password_hash FROM users WHERE email = ?',
+      CREDS.email,
+    ))!;
     expect(row.password_hash).not.toContain(CREDS.password);
     expect(row.password_hash.startsWith('scrypt$')).toBe(true);
   });
@@ -227,9 +228,9 @@ describe('login', () => {
   });
 
   it('refuses any password for an account made through Google', async () => {
-    db.prepare(
+    await database.run(
       "INSERT INTO users (id, email, name, password_hash, google_sub, created_at) VALUES ('g1', 'grace@example.com', 'Grace', '', 'google-1', 1)",
-    ).run();
+    );
     const attempt = (password: string) =>
       app.inject({
         method: 'POST',
@@ -262,14 +263,14 @@ describe('session', () => {
     const me = () => app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
     expect((await me()).json().user.google).toBe(false);
 
-    db.prepare("UPDATE users SET google_sub = 'google-1' WHERE email = ?").run(CREDS.email);
+    await database.run("UPDATE users SET google_sub = 'google-1' WHERE email = ?", CREDS.email);
     // Same cookie, no new sign-in: the change still shows.
     expect((await me()).json().user.google).toBe(true);
   });
 
   it('stops reporting a session once the account is deleted', async () => {
     const cookie = cookieFrom(await signup());
-    db.prepare('DELETE FROM users WHERE email = ?').run(CREDS.email);
+    await database.run('DELETE FROM users WHERE email = ?', CREDS.email);
     const res = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
     expect(res.json().user).toBeNull();
   });
@@ -332,7 +333,7 @@ describe('sign-in lockout', () => {
     await signup();
     await fail(5);
     // Age the recorded failures past the window.
-    db.exec(`UPDATE login_attempts SET created_at = created_at - ${16 * 60 * 1000}`);
+    await database.exec(`UPDATE login_attempts SET created_at = created_at - ${16 * 60 * 1000}`);
     const res = await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS });
     expect(res.statusCode).toBe(200);
   });
@@ -370,7 +371,8 @@ describe('AI generation is gated', () => {
     const userId = res.json().user.id;
     // Simulate three generations already used today.
     for (let i = 0; i < 3; i++) {
-      db.prepare('INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)').run(
+      await database.run(
+        'INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)',
         `u${i}`,
         userId,
         Date.now(),
@@ -391,7 +393,8 @@ describe('AI generation is gated', () => {
     const res = await signup();
     const cookie = cookieFrom(res);
     const userId = res.json().user.id;
-    db.prepare('INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)').run(
+    await database.run(
+      'INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)',
       'old',
       userId,
       Date.now() - 25 * 60 * 60 * 1000, // yesterday
@@ -408,7 +411,8 @@ describe('AI generation is gated', () => {
     const a = await signup({ email: 'a@example.com', password: 'password one!!' });
     const b = await signup({ email: 'b@example.com', password: 'password two!!' });
     for (let i = 0; i < 3; i++) {
-      db.prepare('INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)').run(
+      await database.run(
+        'INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)',
         `x${i}`,
         a.json().user.id,
         Date.now(),
@@ -618,7 +622,7 @@ describe('per-user isolation', () => {
     const cookie = cookieFrom(await signup());
     await app.inject({ method: 'PUT', url: '/api/sets/s1', headers: { cookie }, payload: sampleSet() });
     await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
-    const rows = db.prepare('SELECT COUNT(*) AS n FROM study_sets').get() as { n: number };
+    const rows = (await database.get<{ n: number }>('SELECT COUNT(*) AS n FROM study_sets'))!;
     expect(rows.n).toBe(0);
   });
 });
@@ -737,7 +741,7 @@ describe('password reset', () => {
     const token = tokenFromEmail();
 
     // Age the row past its TTL rather than waiting 30 real minutes.
-    db.prepare('UPDATE password_resets SET expires_at = ?').run(Date.now() - 1000);
+    await database.run('UPDATE password_resets SET expires_at = ?', Date.now() - 1000);
 
     const res = await app.inject({
       method: 'POST',
@@ -762,7 +766,9 @@ describe('password reset', () => {
     await signup();
     await requestReset();
     const token = tokenFromEmail();
-    const rows = db.prepare('SELECT token_hash FROM password_resets').all() as { token_hash: string }[];
+    const rows = await database.all<{ token_hash: string }>(
+      'SELECT token_hash FROM password_resets',
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0]!.token_hash).not.toBe(token);
     expect(rows[0]!.token_hash).toMatch(/^[a-f0-9]{64}$/);
