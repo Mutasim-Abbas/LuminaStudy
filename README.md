@@ -33,8 +33,9 @@ study what you're about to forget, not what you already know.
 
 **Platform**
 
-- **Accounts & sync** — email/password accounts with study sets synced to the
-  server, so your library follows you across devices. The app is local-first:
+- **Accounts & sync** — email/password accounts, or one-tap **Sign in with
+  Google**, with study sets synced to the server, so your library follows you
+  across devices. The app is local-first:
   everything also works offline from local storage.
 - **Password reset** — a single-use link, emailed and valid for 30 minutes,
   that also clears any sign-in lockout you earned while guessing.
@@ -111,6 +112,7 @@ that file documents every option with empty values.
 | `APP_URL`         | no              | Base URL the reset link points at           |
 | `CORS_ORIGIN`     | no              | Locks the API to the frontend origin        |
 | `TRUST_PROXY`     | no              | Proxy addresses to trust for client IPs     |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | Turn on Sign in with Google |
 | `PORT`            | no              | Defaults to `3001`                          |
 
 Backups are configured only on the deployed server: the container runs the app

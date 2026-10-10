@@ -84,6 +84,18 @@ describe('openDatabase', () => {
     db.close();
   });
 
+  it('lets many accounts have no Google id, but no two share one', () => {
+    const db = openDatabase(tempDbPath());
+    const insert = db.prepare(
+      "INSERT INTO users (id, email, password_hash, created_at, google_sub) VALUES (?, ?, '', 1, ?)",
+    );
+    insert.run('u1', 'a@example.com', null);
+    insert.run('u2', 'b@example.com', null);
+    insert.run('u3', 'c@example.com', 'google-123');
+    expect(() => insert.run('u4', 'd@example.com', 'google-123')).toThrow(/UNIQUE/);
+    db.close();
+  });
+
   it('sets up the connection the way Litestream needs it', () => {
     const db = openDatabase(tempDbPath());
     const pragma = (name: string) => Object.values(db.prepare(`PRAGMA ${name}`).get()!)[0];

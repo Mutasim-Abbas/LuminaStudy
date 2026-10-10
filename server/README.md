@@ -18,6 +18,8 @@ browser talks to `/api/*` and never to the provider directly.
 | `/api/auth/me`           | DELETE | Delete the account and everything it owns       |
 | `/api/auth/forgot`       | POST   | Request a reset link (same reply for any email) |
 | `/api/auth/reset`        | POST   | Redeem a reset token and set a new password     |
+| `/api/auth/google`       | GET    | Start Sign in with Google (`?link=1` connects it to the signed-in account) |
+| `/api/auth/google/callback` | GET | Where Google returns; signs in, creates or links the account |
 
 **Study sets** (session required)
 
@@ -82,6 +84,12 @@ a restore drill are in [DEPLOY.md](../DEPLOY.md).
   issued. The request endpoint answers identically for every address, so it
   reveals nothing about which emails have accounts, and a successful reset
   clears any outstanding sign-in lockout.
+- **Sign in with Google** — server-side authorization-code flow with state,
+  nonce and PKCE; the ID token's signature, issuer, audience, expiry and nonce
+  are all checked, and the email must be Google-verified. Accounts are keyed on
+  Google's stable account id. An email that already has a password account is
+  never joined automatically — it is linked from the account page after a
+  password sign-in.
 - **Isolation** — every study-set query is scoped by the session's user id;
   cross-account access is covered by dedicated tests.
 - **Validation & limits** — Zod on every body, per-route rate limits, a
