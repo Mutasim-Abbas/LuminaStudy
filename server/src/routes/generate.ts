@@ -22,7 +22,7 @@ export async function generateRoutes(app: FastifyInstance) {
    */
   app.get('/api/generate/quota', { preHandler: requireAuth }, async (request, reply) => {
     const now = Date.now();
-    const quota = aiQuota(request.user!.id, now);
+    const quota = await aiQuota(request.user!.id, now);
     return reply.send({
       ...quota,
       resetIn: quota.resetAtMs ? formatWait(quota.resetAtMs, now) : null,
@@ -47,7 +47,7 @@ export async function generateRoutes(app: FastifyInstance) {
 
       const userId = request.user!.id;
       const now = Date.now();
-      const quota = aiQuota(userId, now);
+      const quota = await aiQuota(userId, now);
       if (quota.remaining <= 0) {
         // 402 rather than 429: this isn't "slow down", it's "the free tier is
         // spent". The client uses this to show the upgrade prompt.
@@ -64,8 +64,8 @@ export async function generateRoutes(app: FastifyInstance) {
         const set = await generateStudySet(parsed.data);
         // Only count a generation that actually produced something — a failed
         // upstream call shouldn't burn one of the user's three.
-        recordAiUse(userId, now);
-        const after = aiQuota(userId, Date.now());
+        await recordAiUse(userId, now);
+        const after = await aiQuota(userId, Date.now());
         return reply.send({ set, quota: { used: after.used, limit: after.limit, remaining: after.remaining } });
       } catch (err) {
         if (err instanceof GeminiError) {

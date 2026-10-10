@@ -158,7 +158,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     // Per-account lockout, checked before any password work. This is the control
     // that survives an attacker rotating IPs, which the per-IP limiter cannot.
-    const lock = loginLockout(email, now);
+    const lock = await loginLockout(email, now);
     if (lock.locked) {
       return reply.code(429).send({
         error: 'too_many_attempts',
@@ -177,8 +177,8 @@ export async function authRoutes(app: FastifyInstance) {
       (await verifyPassword(password, row?.password_hash || DUMMY_HASH)) &&
       Boolean(row?.password_hash);
     if (!row || !ok) {
-      recordLoginFailure(email, now);
-      const after = loginLockout(email, now);
+      await recordLoginFailure(email, now);
+      const after = await loginLockout(email, now);
       return reply.code(401).send({
         ...invalid,
         // Telling the user how many tries remain is worth more than the little
@@ -188,8 +188,8 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    clearLoginFailures(email);
-    pruneLoginAttempts(now);
+    await clearLoginFailures(email);
+    await pruneLoginAttempts(now);
 
     const user = { id: row.id, email: row.email, name: row.name ?? '' };
     setSessionCookie(reply, signSession(user));
@@ -341,7 +341,7 @@ export async function authRoutes(app: FastifyInstance) {
 
       // Someone who just proved control of the inbox shouldn't still be serving
       // out a lockout earned by forgetting the old password.
-      clearLoginFailures(row.email);
+      await clearLoginFailures(row.email);
 
       // Sign them straight in: they've demonstrated ownership, and bouncing
       // them to a login form to retype the password they just chose is friction

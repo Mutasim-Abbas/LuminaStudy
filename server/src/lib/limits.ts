@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { db } from '../db.js';
+import { database } from '../db.js';
 
 /**
  * Usage limits that must survive a restart and can't be dodged by changing IP,
@@ -33,15 +33,17 @@ export interface LockoutStatus {
 }
 
 /** Failures for this email inside the current window, oldest first. */
-function recentFailures(email: string, nowMs: number): number[] {
-  const rows = db
-    .prepare('SELECT created_at FROM login_attempts WHERE email = ? AND created_at > ? ORDER BY created_at')
-    .all(email, nowMs - LOGIN_LOCKOUT_MS) as unknown as { created_at: number }[];
+async function recentFailures(email: string, nowMs: number): Promise<number[]> {
+  const rows = await database.all<{ created_at: number }>(
+    'SELECT created_at FROM login_attempts WHERE email = ? AND created_at > ? ORDER BY created_at',
+    email,
+    nowMs - LOGIN_LOCKOUT_MS,
+  );
   return rows.map((r) => r.created_at);
 }
 
-export function loginLockout(email: string, nowMs: number): LockoutStatus {
-  const failures = recentFailures(email, nowMs);
+export async function loginLockout(email: string, nowMs: number): Promise<LockoutStatus> {
+  const failures = await recentFailures(email, nowMs);
   const oldest = failures[0];
   if (failures.length >= LOGIN_MAX_ATTEMPTS && oldest !== undefined) {
     // The clock runs from the oldest failure still inside the window, so the
@@ -51,8 +53,9 @@ export function loginLockout(email: string, nowMs: number): LockoutStatus {
   return { locked: false, remaining: LOGIN_MAX_ATTEMPTS - failures.length, retryAtMs: null };
 }
 
-export function recordLoginFailure(email: string, nowMs: number): void {
-  db.prepare('INSERT INTO login_attempts (id, email, created_at) VALUES (?, ?, ?)').run(
+export async function recordLoginFailure(email: string, nowMs: number): Promise<void> {
+  await database.run(
+    'INSERT INTO login_attempts (id, email, created_at) VALUES (?, ?, ?)',
     randomUUID(),
     email,
     nowMs,
@@ -60,13 +63,13 @@ export function recordLoginFailure(email: string, nowMs: number): void {
 }
 
 /** Called after a successful sign-in, so a good password clears the slate. */
-export function clearLoginFailures(email: string): void {
-  db.prepare('DELETE FROM login_attempts WHERE email = ?').run(email);
+export async function clearLoginFailures(email: string): Promise<void> {
+  await database.run('DELETE FROM login_attempts WHERE email = ?', email);
 }
 
 /** Housekeeping: drop attempts that have aged out of every window. */
-export function pruneLoginAttempts(nowMs: number): void {
-  db.prepare('DELETE FROM login_attempts WHERE created_at <= ?').run(nowMs - LOGIN_LOCKOUT_MS);
+export async function pruneLoginAttempts(nowMs: number): Promise<void> {
+  await database.run('DELETE FROM login_attempts WHERE created_at <= ?', nowMs - LOGIN_LOCKOUT_MS);
 }
 
 /* ------------------------------------------------------------------ */
@@ -81,10 +84,12 @@ export interface QuotaStatus {
   resetAtMs: number | null;
 }
 
-export function aiQuota(userId: string, nowMs: number): QuotaStatus {
-  const rows = db
-    .prepare('SELECT created_at FROM ai_usage WHERE user_id = ? AND created_at > ? ORDER BY created_at')
-    .all(userId, nowMs - AI_WINDOW_MS) as unknown as { created_at: number }[];
+export async function aiQuota(userId: string, nowMs: number): Promise<QuotaStatus> {
+  const rows = await database.all<{ created_at: number }>(
+    'SELECT created_at FROM ai_usage WHERE user_id = ? AND created_at > ? ORDER BY created_at',
+    userId,
+    nowMs - AI_WINDOW_MS,
+  );
 
   const used = rows.length;
   const remaining = Math.max(0, AI_FREE_PER_DAY - used);
@@ -98,8 +103,9 @@ export function aiQuota(userId: string, nowMs: number): QuotaStatus {
   };
 }
 
-export function recordAiUse(userId: string, nowMs: number): void {
-  db.prepare('INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)').run(
+export async function recordAiUse(userId: string, nowMs: number): Promise<void> {
+  await database.run(
+    'INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)',
     randomUUID(),
     userId,
     nowMs,
