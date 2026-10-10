@@ -2,7 +2,9 @@ import { mkdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { env } from './env.js';
+import type { Database as AsyncDatabase } from './lib/database.js';
 import { migrate } from './lib/migrate.js';
+import { sqliteDatabase } from './lib/sqliteDatabase.js';
 import { MIGRATIONS } from './migrations.js';
 
 /**
@@ -54,6 +56,13 @@ export function openDatabase(path: string): Database {
 }
 
 export const db = openDatabase(env.DATABASE_PATH);
+
+/**
+ * The same database through the async interface (lib/database.ts). Code is
+ * moving onto this one module at a time; it shares the handle above, so both
+ * see the same data meanwhile.
+ */
+export const database: AsyncDatabase = sqliteDatabase(db);
 
 export interface UserRow {
   id: string;
