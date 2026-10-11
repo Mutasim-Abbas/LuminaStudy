@@ -64,17 +64,8 @@ export async function openDatabase(path: string): Promise<AsyncDatabase> {
   return database;
 }
 
-const handle = openSqlite(env.DATABASE_PATH);
-
-/**
- * The raw handle, kept only while the tests move over to `database`. Shares
- * the connection, so both see the same data.
- */
-export const db = handle;
-
 /** The app's database, through the async interface. */
-export const database: AsyncDatabase = sqliteDatabase(handle);
-await runMigrations(database);
+export const database: AsyncDatabase = await openDatabase(env.DATABASE_PATH);
 
 export interface UserRow {
   id: string;
