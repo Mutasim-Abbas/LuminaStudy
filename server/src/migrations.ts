@@ -105,4 +105,21 @@ export const MIGRATIONS: Migration[] = [
         CREATE UNIQUE INDEX idx_users_google_sub ON users(google_sub);
       `),
   },
+  {
+    version: 4,
+    name: 'captcha_challenges',
+    up: (tx) =>
+      // Sign-up CAPTCHA answers, held server-side. They lived in one process's
+      // memory, which breaks once requests can land on different instances
+      // (a stateless deploy): the image comes from one, the answer is checked
+      // on another. Short-lived and single-use; see lib/captcha.ts.
+      tx.exec(`
+        CREATE TABLE captcha_challenges (
+          token      TEXT PRIMARY KEY,
+          answer     TEXT NOT NULL,
+          expires_at INTEGER NOT NULL
+        );
+        CREATE INDEX idx_captcha_challenges_expiry ON captcha_challenges(expires_at);
+      `),
+  },
 ];
