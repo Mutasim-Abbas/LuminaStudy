@@ -361,7 +361,11 @@ describe('AI generation is gated', () => {
 
   it('reports the quota for a signed-in user', async () => {
     const cookie = cookieFrom(await signup());
-    const res = await app.inject({ method: 'GET', url: '/api/generate/quota', headers: { cookie } });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/generate/quota',
+      headers: { cookie },
+    });
     expect(res.json()).toMatchObject({ used: 0, limit: 3, remaining: 3 });
   });
 
@@ -443,9 +447,9 @@ describe('token attacks', () => {
 
   it('rejects an unsigned "alg: none" token', async () => {
     const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
-    const body = Buffer.from(JSON.stringify({ sub: 'attacker', email: 'evil@example.com' })).toString(
-      'base64url',
-    );
+    const body = Buffer.from(
+      JSON.stringify({ sub: 'attacker', email: 'evil@example.com' }),
+    ).toString('base64url');
     const res = await app.inject({
       method: 'GET',
       url: '/api/auth/me',
@@ -511,7 +515,12 @@ describe('study sets', () => {
 
   it('updates an existing set rather than duplicating it', async () => {
     const cookie = cookieFrom(await signup());
-    await app.inject({ method: 'PUT', url: '/api/sets/s1', headers: { cookie }, payload: sampleSet() });
+    await app.inject({
+      method: 'PUT',
+      url: '/api/sets/s1',
+      headers: { cookie },
+      payload: sampleSet(),
+    });
     await app.inject({
       method: 'PUT',
       url: '/api/sets/s1',
@@ -581,7 +590,12 @@ describe('per-user isolation', () => {
 
   it('never lists another user’s sets', async () => {
     const { a, b } = await twoUsers();
-    await app.inject({ method: 'PUT', url: '/api/sets/s1', headers: { cookie: a }, payload: sampleSet() });
+    await app.inject({
+      method: 'PUT',
+      url: '/api/sets/s1',
+      headers: { cookie: a },
+      payload: sampleSet(),
+    });
 
     const mine = await app.inject({ method: 'GET', url: '/api/sets', headers: { cookie: b } });
     expect(mine.json().sets).toHaveLength(0);
@@ -610,7 +624,12 @@ describe('per-user isolation', () => {
 
   it('cannot delete another user’s set', async () => {
     const { a, b } = await twoUsers();
-    await app.inject({ method: 'PUT', url: '/api/sets/s1', headers: { cookie: a }, payload: sampleSet() });
+    await app.inject({
+      method: 'PUT',
+      url: '/api/sets/s1',
+      headers: { cookie: a },
+      payload: sampleSet(),
+    });
 
     await app.inject({ method: 'DELETE', url: '/api/sets/s1', headers: { cookie: b } });
 
@@ -620,7 +639,12 @@ describe('per-user isolation', () => {
 
   it('removes the account’s sets when the account is deleted', async () => {
     const cookie = cookieFrom(await signup());
-    await app.inject({ method: 'PUT', url: '/api/sets/s1', headers: { cookie }, payload: sampleSet() });
+    await app.inject({
+      method: 'PUT',
+      url: '/api/sets/s1',
+      headers: { cookie },
+      payload: sampleSet(),
+    });
     await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
     const rows = (await database.get<{ n: number }>('SELECT COUNT(*) AS n FROM study_sets'))!;
     expect(rows.n).toBe(0);
