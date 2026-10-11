@@ -36,7 +36,7 @@ const CREDS = { email: 'ada@example.com', password: 'correct horse battery' };
 async function solvedCaptcha(): Promise<{ captchaToken: string; captcha: string }> {
   const res = await app.inject({ method: 'GET', url: '/api/auth/captcha' });
   const token = res.json().token as string;
-  const answer = peekCaptchaAnswer(token);
+  const answer = await peekCaptchaAnswer(token);
   if (!answer) throw new Error('captcha answer not found in store');
   return { captchaToken: token, captcha: answer };
 }

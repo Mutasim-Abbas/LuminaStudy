@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import svgCaptcha from 'svg-captcha';
+import { database } from '../db.js';
 
 /**
  * A real CAPTCHA: the server draws a distorted code into an SVG, keeps the
@@ -8,42 +9,21 @@ import svgCaptcha from 'svg-captcha';
  * picture. The answer never reaches the browser, so it can't be scraped — a
  * bot has to actually solve the image.
  *
- * Challenges live in memory with a short TTL and are single-use (consumed on
- * the first check, right or wrong), which stops one solved image from being
- * replayed across many sign-ups. In-memory is fine for a single instance; a
- * multi-instance deploy would move this to Redis.
+ * Answers live in the database (captcha_challenges), not in memory: on a
+ * stateless deploy the image and the sign-up can be served by different
+ * instances. Each challenge is short-lived and single-use — consumed by the
+ * first check, right or wrong — so one solved image can't be replayed across
+ * many sign-ups, even by two requests racing on two instances.
  */
 
-interface Challenge {
-  answer: string;
-  expiresAt: number;
-}
-
-const store = new Map<string, Challenge>();
-
 const TTL_MS = 5 * 60 * 1000;
-/** Cap the map so a flood of GETs can't grow memory without bound. */
-const MAX_OPEN = 5000;
 
 export interface CaptchaChallenge {
   token: string;
   svg: string;
 }
 
-function sweep(now: number): void {
-  for (const [token, c] of store) {
-    if (c.expiresAt <= now) store.delete(token);
-  }
-}
-
-export function createCaptcha(now: number): CaptchaChallenge {
-  sweep(now);
-  if (store.size >= MAX_OPEN) {
-    // Drop the oldest to make room rather than refuse new users.
-    const oldest = store.keys().next().value;
-    if (oldest) store.delete(oldest);
-  }
-
+export async function createCaptcha(now: number): Promise<CaptchaChallenge> {
   const captcha = svgCaptcha.create({
     size: 5, // characters
     noise: 3, // interfering lines
@@ -54,25 +34,42 @@ export function createCaptcha(now: number): CaptchaChallenge {
 
   const token = randomUUID();
   // Compared case-insensitively, so store the answer folded once.
-  store.set(token, { answer: captcha.text.toLowerCase(), expiresAt: now + TTL_MS });
+  await database.run(
+    'INSERT INTO captcha_challenges (token, answer, expires_at) VALUES (?, ?, ?)',
+    token,
+    captcha.text.toLowerCase(),
+    now + TTL_MS,
+  );
+  // Housekeeping on the way: drop challenges nobody answered in time.
+  await database.run('DELETE FROM captcha_challenges WHERE expires_at <= ?', now);
   return { token, svg: captcha.data };
 }
 
 /**
  * Verify and consume a challenge. Returns true only for a live token whose
- * answer matches. The token is deleted whatever the outcome, so a wrong guess
- * forces a fresh image and a correct one can't be reused.
+ * answer matches. The row is deleted whatever the outcome, in the same
+ * statement that reads it, so of two simultaneous checks only one can see it.
  */
-export function verifyCaptcha(token: string | undefined, guess: string | undefined, now: number): boolean {
+export async function verifyCaptcha(
+  token: string | undefined,
+  guess: string | undefined,
+  now: number,
+): Promise<boolean> {
   if (!token || !guess) return false;
-  const challenge = store.get(token);
+  const challenge = await database.get<{ answer: string; expires_at: number }>(
+    'DELETE FROM captcha_challenges WHERE token = ? RETURNING answer, expires_at',
+    token,
+  );
   if (!challenge) return false;
-  store.delete(token); // single-use, always
-  if (challenge.expiresAt <= now) return false;
+  if (challenge.expires_at <= now) return false;
   return challenge.answer === guess.trim().toLowerCase();
 }
 
 /** Test helper — the answer for a token, without consuming it. */
-export function peekCaptchaAnswer(token: string): string | undefined {
-  return store.get(token)?.answer;
+export async function peekCaptchaAnswer(token: string): Promise<string | undefined> {
+  const row = await database.get<{ answer: string }>(
+    'SELECT answer FROM captcha_challenges WHERE token = ?',
+    token,
+  );
+  return row?.answer;
 }
