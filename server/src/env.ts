@@ -89,11 +89,17 @@ const PRIVATE_RANGES = ['loopback', 'linklocal', 'uniquelocal', '100.64.0.0/10']
 const trustProxyList = raw.TRUST_PROXY?.split(',')
   .map((v) => v.trim())
   .filter(Boolean);
-const trustProxy: string[] | false = trustProxyList?.length
-  ? trustProxyList
-  : raw.NODE_ENV === 'production'
-    ? PRIVATE_RANGES
-    : false;
+// `all` is only for hosts whose edge overwrites X-Forwarded-For with the real
+// client address, so no client value ever reaches the server — Vercel does
+// this. Anywhere else it would let a client choose its own IP.
+const trustProxy: string[] | boolean =
+  trustProxyList?.[0] === 'all'
+    ? true
+    : trustProxyList?.length
+      ? trustProxyList
+      : raw.NODE_ENV === 'production'
+        ? PRIVATE_RANGES
+        : false;
 
 // A remote Turso database refuses every query without its token. Fail at boot
 // with a clear message rather than on the first request.
