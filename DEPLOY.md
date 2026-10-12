@@ -1,25 +1,83 @@
 # Deploying Lumina Study
 
-The app is one Node process that serves both the API and the built frontend, so
-it needs a host that runs a **long-lived server with a persistent disk**.
+There are two ways to run the full app — accounts, sync and AI generation:
 
-Static hosts (GitHub Pages, Netlify, Vercel's static output) cannot run the full
-app: sign-in, sync and AI generation all call `/api/*`, which would not exist.
-The GitHub Pages build still works, in guest mode — no accounts, data stays in
-the browser, AI generation off. Serverless hosts are also unsuitable as-is: the SQLite database
-is a file, and a platform with an ephemeral filesystem discards every account
-and study set on each redeploy.
+- **Vercel + Turso** (recommended, both free): the frontend is served as static
+  files and the API runs as a stateless function. Nothing lives on a server's
+  disk; the database is Turso, hosted SQLite reached over the network.
+- **One container with a volume** (Railway or any Docker host): one Node
+  process serves the API and the frontend, with SQLite on the volume and
+  Litestream copying it to a bucket. See the second half of this guide.
 
-Railway is the reference target below — a `Dockerfile` is included, so anything
+The GitHub Pages build is neither: a static, guest-only copy with no accounts
+and no AI, deployed by CI on every push.
+
+## Vercel + Turso
+
+### 1. Create the database on Turso
+
+1. [turso.tech](https://turso.tech) → sign up (free plan, no card).
+2. Create a database. Pick the location closest to Vercel's default function
+   region (Washington, D.C., `iad1`) — for example AWS `us-east-1`.
+3. Copy its URL (`libsql://…turso.io`) and create a token for it. These become
+   `DATABASE_URL` and `DATABASE_AUTH_TOKEN`.
+
+The tables are created on the first request: the server runs its migrations
+whenever a function instance starts and finds the schema behind.
+
+### 2. Import the project on Vercel
+
+1. [vercel.com](https://vercel.com) → **Add New** → **Project** → import
+   `Mutasim-Abbas/LuminaStudy`.
+2. Leave the build settings alone — `vercel.json` sets them: it installs both
+   packages, builds the frontend and the server, serves `dist`, and sends every
+   `/api/*` request to the single function in `api/index.js`.
+
+### 3. Set the environment variables
+
+Vercel → the project → **Settings** → **Environment Variables**:
+
+| Variable | Value |
+| --- | --- |
+| `NODE_ENV` | `production` |
+| `DATABASE_URL` | the Turso URL |
+| `DATABASE_AUTH_TOKEN` | the Turso token |
+| `JWT_SECRET` | 32+ random characters, e.g. from `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` |
+| `GROQ_API_KEY` | your Groq key |
+| `RESEND_API_KEY` | your Resend key |
+| `APP_URL` | `https://<your-project>.vercel.app` |
+| `CORS_ORIGIN` | the same URL |
+| `TRUST_PROXY` | `all` — Vercel overwrites `X-Forwarded-For` with the real client address, so it is safe to trust here |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional, see "Sign in with Google" below |
+
+No Litestream variables: backups are Turso's job on this setup.
+
+### 4. Deploy and verify
+
+Redeploy so the variables apply, then:
+
+```
+curl https://<your-project>.vercel.app/api/health
+```
+
+Expect `{"ok":true,"aiEnabled":true,...}`. Sign up, sign out, sign back in,
+then redeploy and sign in again — the account surviving a redeploy proves the
+data is in Turso, not on a function's disk.
+
+## Alternative: one container on Railway
+
+The app runs as one Node process that serves both the API and the built
+frontend, so this needs a host with a **long-lived server and a persistent
+disk**. Railway is the reference below; a `Dockerfile` is included, so anything
 that runs a container works the same way.
 
-## 1. Create the service
+### 1. Create the service
 
 1. railway.app → **New Project** → **Deploy from GitHub repo** →
    `Mutasim-Abbas/LuminaStudy`.
 2. Railway detects the `Dockerfile` and builds it. No build settings to fill in.
 
-## 2. Add a volume — do this before the first real use
+### 2. Add a volume — do this before the first real use
 
 Railway → your service → **Variables/Settings** → **Volumes** → add one mounted
 at **`/data`**.
@@ -28,7 +86,7 @@ Without it the container filesystem resets on every deploy, taking all accounts
 and study sets with it. The image sets `DATABASE_PATH=/data/lumina.db`, so the
 mount path has to match.
 
-## 3. Create the backup bucket
+### 3. Create the backup bucket
 
 The volume is one disk. Litestream (built into the image) copies every write
 to an S3-compatible bucket within a second or so, keeps a week of history, and
@@ -50,7 +108,7 @@ AWS S3 or any S3-compatible store works too.
 A key scoped to one bucket means a leaked key exposes the backups, not the
 rest of the account.
 
-## 4. Set the environment variables
+### 4. Set the environment variables
 
 | Variable | Value | Why |
 | --- | --- | --- |
@@ -84,7 +142,7 @@ node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 `CORS_ORIGIN` and `APP_URL` are chicken-and-egg: deploy once to learn the
 generated domain, set both to it, redeploy.
 
-## 5. Verify
+### 5. Verify
 
 ```
 curl https://<your-domain>/api/health
