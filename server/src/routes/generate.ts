@@ -69,6 +69,7 @@ export async function generateRoutes(app: FastifyInstance) {
         return reply.send({ set, quota: { used: after.used, limit: after.limit, remaining: after.remaining } });
       } catch (err) {
         if (err instanceof GeminiError) {
+          if (err.detail) request.log.warn({ status: err.status, detail: err.detail }, 'AI request failed');
           return reply.code(err.status).send({ error: 'ai_error', message: err.message });
         }
         request.log.error(err);

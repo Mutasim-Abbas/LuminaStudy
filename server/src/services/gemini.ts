@@ -31,11 +31,17 @@ export interface GeneratedSet {
   quiz: GeneratedQuestion[];
 }
 
-/** Thrown when the AI isn't configured or the upstream call fails. */
+/**
+ * Thrown when the AI isn't configured or the upstream call fails. `message`
+ * is shown to the user; `detail` — what the provider actually said — is for
+ * the server log only, since it can name the provider account, its limits or
+ * its configuration.
+ */
 export class GeminiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly detail?: string,
   ) {
     super(message);
     this.name = 'GeminiError';
