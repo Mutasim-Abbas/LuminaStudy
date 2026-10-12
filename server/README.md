@@ -48,11 +48,26 @@ the whole app runs from one process on one port.
 
 ## Storage
 
-SQLite via Node's built-in `node:sqlite` (no native compilation): WAL mode,
-foreign keys on, `synchronous = NORMAL`, and a 5-second busy timeout so writes
-wait out Litestream's checkpoints instead of failing. Tables: `users`,
-`study_sets`, `ai_usage` (sliding-window generation quota), `login_attempts`
-(per-account lockout), `password_resets` (hashed single-use reset tokens).
+All database access goes through one async interface (`src/lib/database.ts`)
+with two backends that pass the same contract test suite:
+
+- **Turso** (`libsqlDatabase.ts`, `@libsql/client`) when `DATABASE_URL` is set —
+  the production setup on Vercel, where the API is a stateless function with no
+  disk of its own.
+- **Local SQLite** (`sqliteDatabase.ts`, Node's built-in `node:sqlite`)
+  otherwise — development, tests, and the Docker image. WAL mode, foreign keys
+  on, `synchronous = NORMAL`, and a 5-second busy timeout so writes wait out
+  Litestream's checkpoints instead of failing.
+
+On both, a transaction makes this process's other database calls wait until
+it finishes, so a concurrent request's write can never be rolled back with it.
+Account deletion clears every table explicitly instead of relying on
+`ON DELETE CASCADE`, because Turso ships with foreign keys off.
+
+Tables: `users`, `study_sets`, `ai_usage` (sliding-window generation quota),
+`login_attempts` (per-account lockout), `password_resets` (hashed single-use
+reset tokens), `captcha_challenges` (sign-up CAPTCHA answers — in the database
+rather than memory so any instance can check them).
 
 **Migrations.** The schema lives in `src/migrations.ts` as a numbered list, and
 the database's version in SQLite's own `PRAGMA user_version`. On startup the
@@ -62,7 +77,7 @@ by a newer build. To change the schema, append a migration with the next
 number — never edit one that has shipped, because live databases will not run
 it again.
 
-**Backups.** In the container the server runs under Litestream
+**Backups.** On Turso, backups are the provider's. In the container the server runs under Litestream
 (`scripts/start.sh`, configured by `litestream.yml`), which streams every write
 to a bucket and restores the database on boot if the volume is empty. Setup and
 a restore drill are in [DEPLOY.md](../DEPLOY.md).
