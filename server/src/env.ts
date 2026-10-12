@@ -29,6 +29,11 @@ const schema = z.object({
   OPENAI_COMPAT_MODEL: z.string().default('llama-3.3-70b-versatile'),
   JWT_SECRET: z.string().optional(),
   DATABASE_PATH: z.string().default('data/lumina.db'),
+  // A Turso database (libsql://…) for when the server runs as stateless
+  // functions with no disk of its own, e.g. on Vercel. Leave empty to use the
+  // local SQLite file at DATABASE_PATH.
+  DATABASE_URL: cleanSecret,
+  DATABASE_AUTH_TOKEN: cleanSecret,
   // --- Password-reset email ---
   // Optional: with no key the reset link is logged to the server console
   // instead of emailed, so local development works with nothing to configure.
@@ -84,11 +89,24 @@ const PRIVATE_RANGES = ['loopback', 'linklocal', 'uniquelocal', '100.64.0.0/10']
 const trustProxyList = raw.TRUST_PROXY?.split(',')
   .map((v) => v.trim())
   .filter(Boolean);
-const trustProxy: string[] | false = trustProxyList?.length
-  ? trustProxyList
-  : raw.NODE_ENV === 'production'
-    ? PRIVATE_RANGES
-    : false;
+// `all` is only for hosts whose edge overwrites X-Forwarded-For with the real
+// client address, so no client value ever reaches the server — Vercel does
+// this. Anywhere else it would let a client choose its own IP.
+const trustProxy: string[] | boolean =
+  trustProxyList?.[0] === 'all'
+    ? true
+    : trustProxyList?.length
+      ? trustProxyList
+      : raw.NODE_ENV === 'production'
+        ? PRIVATE_RANGES
+        : false;
+
+// A remote Turso database refuses every query without its token. Fail at boot
+// with a clear message rather than on the first request.
+if (raw.DATABASE_URL?.startsWith('libsql://') && !raw.DATABASE_AUTH_TOKEN) {
+  console.error('DATABASE_AUTH_TOKEN must be set to use the Turso database in DATABASE_URL.');
+  process.exit(1);
+}
 
 // GROQ_API_KEY is an accepted alias for OPENAI_COMPAT_API_KEY.
 const compatKey = raw.OPENAI_COMPAT_API_KEY ?? raw.GROQ_API_KEY;

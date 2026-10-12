@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { env } from '../env.js';
-import { db, type UserRow } from '../db.js';
+import { database, type UserRow } from '../db.js';
 import {
   clearLoginFailures,
   formatWait,
@@ -94,7 +94,7 @@ export async function authRoutes(app: FastifyInstance) {
     '/api/auth/captcha',
     { config: { rateLimit: { max: env.NODE_ENV === 'test' ? 100_000 : 30, timeWindow: '1 minute' } } },
     async (_request, reply) => {
-      const { token, svg } = createCaptcha(Date.now());
+      const { token, svg } = await createCaptcha(Date.now());
       return reply.send({ token, svg });
     },
   );
@@ -121,7 +121,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     // The real gate. Wrong or expired answer -> the client must fetch a new
     // image, since the token is consumed on this check either way.
-    if (!verifyCaptcha(parsed.data.captchaToken, parsed.data.captcha, now)) {
+    if (!(await verifyCaptcha(parsed.data.captchaToken, parsed.data.captcha, now))) {
       return reply.code(400).send({
         error: 'captcha_failed',
         message: 'The verification code was incorrect. Please try the new image.',
@@ -130,7 +130,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     const { email, password, name } = parsed.data;
 
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    const existing = await database.get('SELECT id FROM users WHERE email = ?', email);
     if (existing) {
       return reply
         .code(409)
@@ -138,9 +138,14 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const user = { id: randomUUID(), email, name };
-    db.prepare(
+    await database.run(
       'INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).run(user.id, user.email, user.name, await hashPassword(password), Date.now());
+      user.id,
+      user.email,
+      user.name,
+      await hashPassword(password),
+      Date.now(),
+    );
 
     setSessionCookie(reply, signSession(user));
     return reply.code(201).send({ user: publicUser(user) });
@@ -158,7 +163,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     // Per-account lockout, checked before any password work. This is the control
     // that survives an attacker rotating IPs, which the per-IP limiter cannot.
-    const lock = loginLockout(email, now);
+    const lock = await loginLockout(email, now);
     if (lock.locked) {
       return reply.code(429).send({
         error: 'too_many_attempts',
@@ -167,7 +172,7 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
+    const row = await database.get<UserRow>('SELECT * FROM users WHERE email = ?', email);
 
     // Hash even when the user is unknown, so response time doesn't reveal it.
     // Accounts made through Google have no password (an empty hash); they get
@@ -177,8 +182,8 @@ export async function authRoutes(app: FastifyInstance) {
       (await verifyPassword(password, row?.password_hash || DUMMY_HASH)) &&
       Boolean(row?.password_hash);
     if (!row || !ok) {
-      recordLoginFailure(email, now);
-      const after = loginLockout(email, now);
+      await recordLoginFailure(email, now);
+      const after = await loginLockout(email, now);
       return reply.code(401).send({
         ...invalid,
         // Telling the user how many tries remain is worth more than the little
@@ -188,8 +193,8 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    clearLoginFailures(email);
-    pruneLoginAttempts(now);
+    await clearLoginFailures(email);
+    await pruneLoginAttempts(now);
 
     const user = { id: row.id, email: row.email, name: row.name ?? '' };
     setSessionCookie(reply, signSession(user));
@@ -208,14 +213,27 @@ export async function authRoutes(app: FastifyInstance) {
     // answer reflects changes since sign-in — such as linking Google — and a
     // deleted account stops looking signed in.
     const row = session
-      ? (db.prepare('SELECT * FROM users WHERE id = ?').get(session.id) as UserRow | undefined)
+      ? await database.get<UserRow>('SELECT * FROM users WHERE id = ?', session.id)
       : undefined;
     return reply.send({ user: row ? publicUser(row) : null });
   });
 
-  /** Deletes the account and, by cascade, everything it owns. */
+  /**
+   * Deletes the account and everything it owns. Each table is cleared
+   * explicitly rather than left to ON DELETE CASCADE: Turso, like SQLite,
+   * ships with foreign-key enforcement off, and a deleted account must not
+   * leave its study sets behind on any backend. One transaction, so it is
+   * all gone or all still there.
+   */
   app.delete('/api/auth/me', { preHandler: requireAuth }, async (request, reply) => {
-    db.prepare('DELETE FROM users WHERE id = ?').run(request.user!.id);
+    const { id, email } = request.user!;
+    await database.transaction(async (tx) => {
+      for (const table of ['study_sets', 'ai_usage', 'password_resets']) {
+        await tx.run(`DELETE FROM ${table} WHERE user_id = ?`, id);
+      }
+      await tx.run('DELETE FROM login_attempts WHERE email = ?', email);
+      await tx.run('DELETE FROM users WHERE id = ?', id);
+    });
     clearSessionCookie(reply);
     return reply.send({ ok: true });
   });
@@ -258,12 +276,13 @@ export async function authRoutes(app: FastifyInstance) {
 
       const { email } = parsed.data;
       const now = Date.now();
-      const row = db.prepare('SELECT id, email FROM users WHERE email = ?').get(email) as
-        | Pick<UserRow, 'id' | 'email'>
-        | undefined;
+      const row = await database.get<Pick<UserRow, 'id' | 'email'>>(
+        'SELECT id, email FROM users WHERE email = ?',
+        email,
+      );
 
       if (row) {
-        const token = createResetToken(row.id, now);
+        const token = await createResetToken(row.id, now);
         // HashRouter: the client route lives after the '#'.
         const resetUrl = `${env.APP_URL}/#/reset?token=${encodeURIComponent(token)}`;
         try {
@@ -276,7 +295,7 @@ export async function authRoutes(app: FastifyInstance) {
         }
       }
 
-      pruneResetTokens(now);
+      await pruneResetTokens(now);
       return reply.send(generic);
     },
   );
@@ -317,7 +336,7 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       const now = Date.now();
-      const userId = resolveResetToken(parsed.data.token, now);
+      const userId = await resolveResetToken(parsed.data.token, now);
       if (!userId) {
         return reply.code(400).send({
           error: 'invalid_token',
@@ -325,7 +344,7 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
+      const row = await database.get<UserRow>('SELECT * FROM users WHERE id = ?', userId);
       if (!row) {
         return reply.code(400).send({
           error: 'invalid_token',
@@ -333,15 +352,16 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
+      await database.run(
+        'UPDATE users SET password_hash = ? WHERE id = ?',
         await hashPassword(parsed.data.password),
         userId,
       );
-      consumeResetToken(parsed.data.token, now);
+      await consumeResetToken(parsed.data.token, now);
 
       // Someone who just proved control of the inbox shouldn't still be serving
       // out a lockout earned by forgetting the old password.
-      clearLoginFailures(row.email);
+      await clearLoginFailures(row.email);
 
       // Sign them straight in: they've demonstrated ownership, and bouncing
       // them to a login form to retype the password they just chose is friction

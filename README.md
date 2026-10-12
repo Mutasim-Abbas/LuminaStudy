@@ -49,7 +49,8 @@ study what you're about to forget, not what you already know.
 | Layer     | Technology                                                       |
 | --------- | ---------------------------------------------------------------- |
 | Frontend  | React 18, TypeScript, Vite, Tailwind CSS, React Router           |
-| Backend   | Node.js, Fastify 5, SQLite (`node:sqlite`), Zod                  |
+| Backend   | Node.js, Fastify 5, Zod — a Vercel function in production        |
+| Database  | Turso (hosted SQLite) in production; local SQLite in dev and tests |
 | AI        | Groq (OpenAI-compatible API), structured JSON output             |
 | Auth      | scrypt password hashing, JWT sessions in httpOnly cookies        |
 | PDF       | pdf.js (client-side text extraction, lazy-loaded)                |
@@ -90,13 +91,16 @@ builds on first run, waits for the server to answer, then opens the browser.
 
 ## Deployment
 
-The included GitHub Actions workflow type-checks, lints, tests, and builds on
-every push to `main`, then publishes the static frontend to GitHub Pages at
-https://mutasim-abbas.github.io/LuminaStudy/.
+The full app runs on **Vercel + Turso**: the frontend as static files, the API
+as one stateless function, and the data in Turso. Nothing depends on a
+server's disk, so any number of function instances can serve it. A container
+setup (Railway, with SQLite on a volume and Litestream backups) is the
+alternative. Both are in [DEPLOY.md](DEPLOY.md).
 
-Pages has no backend, so that build runs in guest mode: no sign-in, everything
-is saved in the browser, and AI generation is switched off. Accounts, cloud
-sync, and AI need the Node server — see [DEPLOY.md](DEPLOY.md).
+The GitHub Actions workflow type-checks, lints and tests both packages — the
+server suite twice, once per database backend — then publishes a guest-only
+static copy to GitHub Pages at https://mutasim-abbas.github.io/LuminaStudy/ (no
+sign-in, data saved in the browser, AI off).
 
 ## Environment variables
 
@@ -112,6 +116,7 @@ that file documents every option with empty values.
 | `APP_URL`         | no              | Base URL the reset link points at           |
 | `CORS_ORIGIN`     | no              | Locks the API to the frontend origin        |
 | `TRUST_PROXY`     | no              | Proxy addresses to trust for client IPs     |
+| `DATABASE_URL` / `DATABASE_AUTH_TOKEN` | on Vercel | Turso database; unset means the local file |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | no | Turn on Sign in with Google |
 | `PORT`            | no              | Defaults to `3001`                          |
 

@@ -22,7 +22,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Same as Vercel's runtime (engines in package.json).
+          node-version: 24
           cache: npm
 
       - run: npm ci
@@ -59,6 +60,11 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # Again with the app on the libSQL client — the Turso code path. One
+      # process, since the test files share this database file.
+      - run: npx vitest run --poolOptions.forks.singleFork
+        env:
+          DATABASE_URL: file:${{ runner.temp }}/ci-libsql.db
       - run: npm run build
       # The container entrypoint; ShellCheck ships with GitHub's Ubuntu runners.
       - run: shellcheck scripts/start.sh
