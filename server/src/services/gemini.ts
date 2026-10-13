@@ -170,7 +170,7 @@ export async function generateStudySet(opts: {
   questions?: number;
 }): Promise<GeneratedSet> {
   if (!env.aiEnabled) {
-    throw new GeminiError('AI is not configured on the server (no API key in .env).', 503);
+    throw new GeminiError('AI generation isn’t available right now.', 503, 'no AI provider key configured');
   }
 
   // Prefer the OpenAI-compatible provider when configured (reliable while
@@ -181,7 +181,7 @@ export async function generateStudySet(opts: {
   }
 
   if (!env.GEMINI_API_KEY) {
-    throw new GeminiError('AI is not configured on the server (missing GEMINI_API_KEY).', 503);
+    throw new GeminiError('AI generation isn’t available right now.', 503, 'GEMINI_API_KEY is not set');
   }
 
   const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
