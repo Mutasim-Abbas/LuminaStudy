@@ -147,3 +147,13 @@ itself. A failed AI request doesn't spend the user's daily quota.
   the transaction queue on both backends, the atomic CAPTCHA check, explicit
   account deletion and AI error hiding. This caught one test that wasn't
   testing anything; it was rewritten.
+
+## 3. Leak audit (2026-10-20)
+
+| Checked | Result |
+| --- | --- |
+| All 180 commits, for API keys (Groq, Resend, Google, AWS, OpenAI, GitHub, Backblaze), private keys, JWTs and hard-coded secrets | None found |
+| Env or key files ever committed | Only the empty `server/.env.example` |
+| Project folder, tracked or not | No keys; `server/.env` is ignored and holds no API keys |
+| Built frontend and the live GitHub Pages site | No keys, no source maps; `/.env` returns 404 |
+| Server logs and responses | Two issues, fixed in §1: AI error text and query strings in logs |
