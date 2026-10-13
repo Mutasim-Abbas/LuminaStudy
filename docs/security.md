@@ -157,3 +157,16 @@ itself. A failed AI request doesn't spend the user's daily quota.
 | Project folder, tracked or not | No keys; `server/.env` is ignored and holds no API keys |
 | Built frontend and the live GitHub Pages site | No keys, no source maps; `/.env` returns 404 |
 | Server logs and responses | Two issues, fixed in §1: AI error text and query strings in logs |
+
+## 4. Known gaps
+
+| Gap | Risk | Plan |
+| --- | --- | --- |
+| Sessions are stateless: a password reset or sign-out doesn't end sessions on other devices | A stolen cookie works until it expires (up to 7 days) | Build step 3: a session version that a reset or "log out everywhere" bumps |
+| Deleting an account doesn't re-confirm the password | Anyone at an unlocked, signed-in browser can delete it | Build step 3, with a fresh Google sign-in for password-less accounts |
+| No Content-Security-Policy | A future XSS bug would have no second line of defence | Add a strict CSP once the frontend's needs are mapped |
+| Per-IP limits are per instance on Vercel | Spread over many instances, the IP limits loosen; per-account limits (lockout, AI quota) are in the database and unaffected | Move the IP counters to a shared store if abuse appears |
+| Email addresses aren't verified at sign-up | Someone can register an address they don't own (Google linking is already protected against this) | Verification email once a sending domain is set up |
+| Dev tooling (vitest, vite, tailwind) has advisories that need major upgrades | Development only; nothing ships to users | Upgrade in a dedicated change |
+| Live services not yet exercised: a real Turso database, the Vercel deploy and Google sign-in | Configuration mistakes would show only after deploy | Run the checks in `DEPLOY.md` on first deploy |
+| No automated secret scanning in CI | A future commit could add a key unnoticed | Add a secret scanner (e.g. gitleaks) to CI |
