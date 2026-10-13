@@ -79,3 +79,30 @@ starts. The open items are listed honestly in §4.
   returns, and one Google account can open only one Lumina account.
 - The redirect URI is built from configuration, never from the request's Host
   header.
+
+### 2.4 Abuse and rate limiting
+
+| Endpoint | Limit per client IP |
+| --- | --- |
+| Everything | 100 per minute |
+| Sign-up, sign-in | 10 per 5 minutes |
+| CAPTCHA image | 30 per minute |
+| Password-reset request | 5 per 15 minutes |
+| Password-reset redeem | 10 per 15 minutes |
+| Google sign-in | 20 per minute |
+| AI generation | 10 per minute, and 3 per account per rolling 24 hours |
+
+Client IPs come only from trusted proxies: private address ranges by default in
+production, or `TRUST_PROXY=all` on Vercel, which overwrites `X-Forwarded-For`
+itself. A failed AI request doesn't spend the user's daily quota.
+
+### 2.5 Data access and integrity
+
+- Every query uses bound `?` parameters; no user input is ever spliced into
+  SQL.
+- Every study-set query is scoped by the session's user id, never by an id
+  from the request. An update `WHERE` clause stops one account overwriting
+  another's set even with a guessed id. Covered by isolation tests.
+- Zod validates every request body; bodies are capped at 1 MB.
+- Writes that must happen together (bulk sync, account deletion, issuing a
+  reset link, each migration) run in one transaction.
