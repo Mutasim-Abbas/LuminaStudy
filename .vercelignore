@@ -1,0 +1,17 @@
+# Never upload these with a `vercel deploy` from a local checkout. Vercel's CLI
+# skips `.env.local` by default but not `.env`, and server/.env holds the real
+# keys. (Deploys from GitHub never see them: they are not in the repo.)
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+!server/.env.example
+
+# Local databases and their WAL files — production data lives in Turso.
+data/
+server/data/
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
