@@ -138,6 +138,9 @@ starting the app.
 
 ## Security
 
+The full write-up — every control, the leak audit, and the known gaps with
+their plans — is in [docs/security.md](docs/security.md). In short:
+
 - The AI provider key exists **only on the server**; the browser talks to
   `/api/*` and never to the provider directly.
 - Passwords are hashed with scrypt (per-user salt, constant-time comparison)
