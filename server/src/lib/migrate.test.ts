@@ -67,4 +67,11 @@ describe('migrate', () => {
     expect(tables(db)).toEqual(['a']);
     expect(schemaVersion(db)).toBe(1);
   });
+
+  it('refuses a database from a newer build', () => {
+    const db = freshDb();
+    db.exec('PRAGMA user_version = 3');
+    expect(() => migrate(db, MIGRATIONS)).toThrow(/version 3.*only knows up to 2/);
+    expect(tables(db)).toEqual([]);
+  });
 });
