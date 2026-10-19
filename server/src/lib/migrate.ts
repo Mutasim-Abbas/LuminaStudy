@@ -25,6 +25,14 @@ export function schemaVersion(db: DatabaseSync): number {
 
 /** Applies every migration above the database's version, in order. Returns the versions applied. */
 export function migrate(db: DatabaseSync, migrations: readonly Migration[]): number[] {
+  // Versions must run 1, 2, 3, … with no gaps or repeats. A gap would be
+  // skipped on new databases; a repeat would never run on existing ones.
+  migrations.forEach((m, i) => {
+    if (m.version !== i + 1) {
+      throw new Error(`Migration "${m.name}" is numbered ${m.version} but is at position ${i + 1}.`);
+    }
+  });
+
   const current = schemaVersion(db);
   const latest = migrations.at(-1)?.version ?? 0;
 
