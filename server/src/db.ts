@@ -38,7 +38,10 @@ export function openDatabase(path: string): Database {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA foreign_keys = ON;');
 
-  migrate(db, MIGRATIONS);
+  // Logged so a deploy that changes the schema says so in the host's logs.
+  for (const version of migrate(db, MIGRATIONS)) {
+    console.info(`[db] applied migration ${version}: ${MIGRATIONS[version - 1]!.name}`);
+  }
   return db;
 }
 
