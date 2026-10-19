@@ -50,4 +50,12 @@ describe('start script', () => {
     expect(run.stderr).toContain('running without backups');
     expect(run.litestream).toEqual([]);
   });
+
+  it('refuses to start in production without a backup bucket', () => {
+    const run = start({ NODE_ENV: 'production' });
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe(''); // the server never started
+    expect(run.stderr).toContain('LITESTREAM_BUCKET is not set');
+    expect(run.litestream).toEqual([]);
+  });
 });
