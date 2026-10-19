@@ -4,6 +4,13 @@
 # ${VARS} are expanded from the environment when Litestream starts. The bucket
 # credentials are read by Litestream itself from LITESTREAM_ACCESS_KEY_ID and
 # LITESTREAM_SECRET_ACCESS_KEY, so no secret is ever written here.
+
+# How far back a restore can go. Litestream's default is one day; a week gives
+# time to notice a bad deploy or a bug that quietly damaged data.
+snapshot:
+  interval: 24h
+  retention: 168h
+
 dbs:
   - path: ${DATABASE_PATH}
     replica:
