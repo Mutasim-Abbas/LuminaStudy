@@ -28,3 +28,21 @@ So a student who reviews on their phone and then opens their laptop sees every
 card due again, a broken streak and an empty planner. That is the main thing
 this design fixes.
 
+### Bugs found while reading the code
+
+1. **Rate limits are shared by every user once deployed.** `trustProxy: false`
+   in `server/src/app.ts` means behind Railway's proxy every request carries the
+   proxy's IP. The login limit (10 per 5 min) and generation limit then apply to
+   _all users combined_.
+2. **A password reset does not sign the attacker out.** Sessions are stateless
+   JWTs valid for 7 days. Resetting a compromised password leaves the stolen
+   cookie working until it expires. Same for "sign out" — it only clears the
+   cookie on this device.
+3. **Deleted sets can come back.** `POST /api/sets/sync` upserts whatever a
+   device has locally. A set deleted on device A is re-created when device B,
+   which still has it cached, signs in.
+4. **Two devices silently overwrite each other.** `PUT /api/sets/:id` is
+   last-write-wins on the whole document, with no version check.
+5. **CI never runs the server tests.** `.github/workflows/deploy.yml` only
+   type-checks and tests the frontend.
+
