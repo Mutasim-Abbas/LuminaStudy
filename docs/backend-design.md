@@ -267,3 +267,8 @@ server's own clock, never the device's.
 | GET    | `/:key` | `planner`, `grade_calc` or `preferences`          |
 | PUT    | `/:key` | `If-Match: <version>`; same 409 behaviour as sets |
 
+### AI — `/api/generate` (existing, unchanged shape)
+
+`GET /quota` and `POST /` stay. Internally each call now records model and
+token counts in `ai_usage`, so cost per user is visible.
+
