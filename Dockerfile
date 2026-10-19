@@ -36,6 +36,8 @@ COPY --from=build /app/server/dist ./server/dist
 # binary reads every byte of user data and holds the bucket credentials.
 COPY --from=litestream/litestream:0.5.17@sha256:4b02b9859a6b6b4087d8b8944e15f7e984bd7957cba322bbeee38b0e27b9656a \
   /usr/local/bin/litestream /usr/local/bin/litestream
+COPY server/litestream.yml ./server/
+COPY server/scripts/start.sh ./server/scripts/
 
 # The database lives on a mounted volume, not in the image: anything written
 # to the container filesystem is lost on every redeploy. DATABASE_PATH must
@@ -48,4 +50,7 @@ ENV PORT=3001
 EXPOSE 3001
 
 WORKDIR /app/server
-CMD ["node", "dist/index.js"]
+# The start script restores the database if the volume is empty, then runs
+# the server under Litestream. It refuses to start in production without a
+# backup bucket unless ALLOW_NO_BACKUP=1 (see DEPLOY.md).
+CMD ["sh", "scripts/start.sh", "node", "dist/index.js"]
