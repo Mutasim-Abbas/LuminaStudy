@@ -46,3 +46,39 @@ this design fixes.
 5. **CI never runs the server tests.** `.github/workflows/deploy.yml` only
    type-checks and tests the frontend.
 
+## 2. Architecture
+
+```
+ Browser (React SPA, local-first)
+   │  same origin, httpOnly session cookie
+   ▼
+ Railway container — one Node 24 process (Fastify)
+   ├── /api/*        JSON API
+   ├── /             built frontend (static)
+   ├── Groq          AI generation (server-side key)
+   ├── Resend        password-reset email (verified domain)
+   └── SQLite        /data/lumina.db on a Railway volume
+          │
+          └── Litestream → S3-compatible bucket (continuous backup)
+```
+
+Decisions:
+
+- **One service serving API + frontend** stays. It keeps the cookie first-party,
+  needs no CORS in production, and is one thing to deploy.
+- **SQLite stays.** It is already built, tested and fast; at launch scale one
+  file on one volume is plenty. What it does not give for free is backups, so
+  Litestream streams every write to object storage and can restore the file on
+  a fresh volume.
+- **Exactly one instance.** A volume attaches to one container, so the app
+  cannot scale out, and a redeploy has a few seconds of downtime while the
+  volume moves to the new container. Both are acceptable at launch. The
+  in-memory CAPTCHA store and rate-limit counters are fine for the same reason.
+- **Local-first stays.** The app keeps working offline from localStorage. The
+  server becomes the durable copy and the thing that merges devices.
+
+**When to move to Postgres:** when a second instance is needed (traffic, or
+zero-downtime deploys), or when backup/restore through Litestream becomes the
+painful part. The schema below sticks to portable types so that move stays
+mechanical.
+
