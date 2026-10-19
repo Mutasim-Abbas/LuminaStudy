@@ -62,7 +62,7 @@ jobs:
       - run: npm run build
 
   deploy:
-    needs: build
+    needs: [build, server]
     runs-on: ubuntu-latest
     environment:
       name: github-pages
