@@ -154,5 +154,28 @@ CREATE TABLE card_schedules (
   PRIMARY KEY (user_id, set_id, card_id)
 );
 CREATE INDEX idx_card_schedules_sync ON card_schedules(user_id, updated_at);
+
+-- Append-only study log. Replaces the counters in `lumina.activity`.
+-- The id is generated on the device, so retrying an upload can never
+-- double-count (INSERT … ON CONFLICT DO NOTHING).
+CREATE TABLE study_events (
+  id           TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind         TEXT NOT NULL CHECK (kind IN ('card_review', 'quiz_answer', 'study_time')),
+  set_id       TEXT,                            -- no FK: history outlives a deleted set
+  card_id      TEXT,
+  grade        TEXT CHECK (grade IN ('again', 'hard', 'good', 'easy')),
+  correct      INTEGER,                         -- 0/1, quiz answers only
+  duration_ms  INTEGER NOT NULL DEFAULT 0,
+  local_day    TEXT NOT NULL,                   -- 'YYYY-MM-DD', the student's own day
+  occurred_at  INTEGER NOT NULL
+);
+CREATE INDEX idx_study_events_day ON study_events(user_id, local_day);
 ```
+
+Why an event log for activity instead of synced counters: counters from two
+devices cannot be merged correctly (both say "12 reviews today" — is that 12 or
+24?). Events merge by union, and the streak, heatmap and totals become a
+`GROUP BY local_day`. `local_day` is recorded by the device because "today"
+means the student's day, not the server's UTC day.
 
