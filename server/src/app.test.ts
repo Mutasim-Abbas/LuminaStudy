@@ -45,4 +45,12 @@ describe('client IP behind the proxy', () => {
     // A different user behind the same proxy is untouched.
     expect(await remaining('198.51.100.9')).toBe(first);
   });
+
+  it('ignores addresses the client prepends to X-Forwarded-For', async () => {
+    const before = await remaining('192.0.2.50');
+    // The proxy appends the real address; anything to its left came from the
+    // client — even a private-looking one — and must not change the bucket.
+    expect(await remaining('1.2.3.4, 192.0.2.50')).toBe(before - 1);
+    expect(await remaining('10.9.9.9, 192.0.2.50')).toBe(before - 2);
+  });
 });
