@@ -53,4 +53,9 @@ describe('client IP behind the proxy', () => {
     expect(await remaining('1.2.3.4, 192.0.2.50')).toBe(before - 1);
     expect(await remaining('10.9.9.9, 192.0.2.50')).toBe(before - 2);
   });
+
+  it('sees through more than one internal proxy', async () => {
+    const before = await remaining('203.0.113.20');
+    expect(await remaining('203.0.113.20, 100.64.0.5')).toBe(before - 1);
+  });
 });
