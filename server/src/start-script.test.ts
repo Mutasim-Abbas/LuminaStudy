@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -64,5 +64,20 @@ describe('start script', () => {
     expect(run.status).toBe(0);
     expect(run.stdout).toBe('server started\n');
     expect(run.litestream).toEqual([]);
+  });
+
+  it('restores from the bucket first, then runs the server under replication', () => {
+    const run = start({ NODE_ENV: 'production', LITESTREAM_BUCKET: 'lumina-backups' });
+    expect(run.status).toBe(0);
+    // The script finds its config next to itself, path unnormalized.
+    const config = `${dirname(SCRIPT)}/../litestream.yml`;
+    expect(run.litestream).toEqual([
+      // Only when the volume has no database, and fine while the bucket is empty.
+      `restore -config ${config} -if-db-not-exists -if-replica-exists ${run.dbPath}`,
+      // Litestream owns the server process, so the two live and die together.
+      `replicate -config ${config} -exec echo server started`,
+    ]);
+    // The volume's directory exists before the restore writes into it.
+    expect(existsSync(dirname(run.dbPath))).toBe(true);
   });
 });
