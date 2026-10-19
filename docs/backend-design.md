@@ -272,3 +272,14 @@ server's own clock, never the device's.
 `GET /quota` and `POST /` stay. Internally each call now records model and
 token counts in `ai_usage`, so cost per user is visible.
 
+## 5. Client sync model
+
+1. **Open the app:** render from localStorage immediately, then
+   `GET /api/sync?since=<last cursor>` and merge.
+2. **Change something:** write to localStorage first, then push in the
+   background (`PUT /api/sets/:id`, `POST /api/events`, `PUT /api/documents/:key`).
+   Failed pushes go into a queue in localStorage and retry on the next
+   `online` event or app open.
+3. **Merge rules:** sets and documents use versions (conflict → ask);
+   schedules are per card, newest `last_reviewed_at` wins; events are a union.
+
