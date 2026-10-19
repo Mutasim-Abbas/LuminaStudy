@@ -21,74 +21,81 @@ const { DatabaseSync } = nodeRequire('node:sqlite') as typeof import('node:sqlit
  * Postgres when we later move to a hosted database.
  */
 
-mkdirSync(dirname(env.DATABASE_PATH), { recursive: true });
+type Database = InstanceType<typeof DatabaseSync>;
 
-export const db = new DatabaseSync(env.DATABASE_PATH);
+/** Opens (creating if needed) the database at `path`, with the schema in place. */
+export function openDatabase(path: string): Database {
+  mkdirSync(dirname(path), { recursive: true });
+  const db = new DatabaseSync(path);
 
-// WAL improves read/write concurrency; foreign keys must be enabled per-connection.
-db.exec('PRAGMA journal_mode = WAL;');
-db.exec('PRAGMA foreign_keys = ON;');
+  // WAL improves read/write concurrency; foreign keys must be enabled per-connection.
+  db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA foreign_keys = ON;');
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id           TEXT PRIMARY KEY,
-    email        TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    created_at   INTEGER NOT NULL
-  );
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id           TEXT PRIMARY KEY,
+      email        TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      created_at   INTEGER NOT NULL
+    );
 
 
-  CREATE TABLE IF NOT EXISTS study_sets (
-    id          TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    subject     TEXT NOT NULL DEFAULT '',
-    title       TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    -- Cards + quiz are stored as JSON; the app treats a set as one document.
-    data        TEXT NOT NULL,
-    mastery     INTEGER NOT NULL DEFAULT 0,
-    created_at  INTEGER NOT NULL,
-    updated_at  INTEGER NOT NULL
-  );
+    CREATE TABLE IF NOT EXISTS study_sets (
+      id          TEXT PRIMARY KEY,
+      user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      subject     TEXT NOT NULL DEFAULT '',
+      title       TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      -- Cards + quiz are stored as JSON; the app treats a set as one document.
+      data        TEXT NOT NULL,
+      mastery     INTEGER NOT NULL DEFAULT 0,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
 
-  CREATE INDEX IF NOT EXISTS idx_study_sets_user ON study_sets(user_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_study_sets_user ON study_sets(user_id, updated_at DESC);
 
-  -- One row per AI generation, used to enforce the free daily quota. Kept as an
-  -- append-only log rather than a counter so the window can slide (and so usage
-  -- stays auditable) instead of resetting on a fixed clock boundary.
-  CREATE TABLE IF NOT EXISTS ai_usage (
-    id         TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    created_at INTEGER NOT NULL
-  );
+    -- One row per AI generation, used to enforce the free daily quota. Kept as an
+    -- append-only log rather than a counter so the window can slide (and so usage
+    -- stays auditable) instead of resetting on a fixed clock boundary.
+    CREATE TABLE IF NOT EXISTS ai_usage (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL
+    );
 
-  CREATE INDEX IF NOT EXISTS idx_ai_usage_user_time ON ai_usage(user_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ai_usage_user_time ON ai_usage(user_id, created_at DESC);
 
-  -- Failed sign-in attempts, for per-account lockout. Cleared on success.
-  CREATE TABLE IF NOT EXISTS login_attempts (
-    id         TEXT PRIMARY KEY,
-    email      TEXT NOT NULL,
-    created_at INTEGER NOT NULL
-  );
+    -- Failed sign-in attempts, for per-account lockout. Cleared on success.
+    CREATE TABLE IF NOT EXISTS login_attempts (
+      id         TEXT PRIMARY KEY,
+      email      TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
 
-  CREATE INDEX IF NOT EXISTS idx_login_attempts ON login_attempts(email, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_login_attempts ON login_attempts(email, created_at DESC);
 
-  -- Password-reset tokens. Only a SHA-256 hash of each token is stored, exactly
-  -- like a password: whoever holds the raw token can take over the account, so a
-  -- database leak must not hand out working reset links. Rows are kept after use
-  -- (marked via used_at) rather than deleted, so a replayed link is rejected
-  -- explicitly instead of looking like an unknown token.
-  CREATE TABLE IF NOT EXISTS password_resets (
-    id         TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_hash TEXT NOT NULL UNIQUE,
-    created_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL,
-    used_at    INTEGER
-  );
+    -- Password-reset tokens. Only a SHA-256 hash of each token is stored, exactly
+    -- like a password: whoever holds the raw token can take over the account, so a
+    -- database leak must not hand out working reset links. Rows are kept after use
+    -- (marked via used_at) rather than deleted, so a replayed link is rejected
+    -- explicitly instead of looking like an unknown token.
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      used_at    INTEGER
+    );
 
-  CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id, created_at DESC);
-`);
+    CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id, created_at DESC);
+  `);
+
+  addColumnIfMissing(db, 'users', 'name', "TEXT NOT NULL DEFAULT ''");
+  return db;
+}
 
 /**
  * Migrations for databases that already exist.
@@ -99,13 +106,18 @@ db.exec(`
  * the table first. Adding a column with a NOT NULL default is safe to run
  * against a table with rows in it.
  */
-function addColumnIfMissing(table: string, column: string, definition: string): void {
+function addColumnIfMissing(
+  db: Database,
+  table: string,
+  column: string,
+  definition: string,
+): void {
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as unknown as { name: string }[];
   if (columns.some((c) => c.name === column)) return;
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
-addColumnIfMissing('users', 'name', "TEXT NOT NULL DEFAULT ''");
+export const db = openDatabase(env.DATABASE_PATH);
 
 export interface UserRow {
   id: string;
