@@ -225,3 +225,22 @@ Session JWT gains a `ver` claim; `requireAuth` rejects a token whose `ver` is
 below the user's `token_version`. That is one primary-key lookup per request —
 microseconds on local SQLite.
 
+### Sync — `/api/sync`
+
+One pull endpoint instead of one per data type, so a device catches up in a
+single request on open:
+
+```
+GET /api/sync?since=<cursor>
+→ {
+    cursor: 1792417460285,               // server epoch ms — pass back next time
+    sets:        [ …changed sets… ],
+    deletedSets: [ "set-id", … ],          // tombstones — fixes bug 3
+    schedules:   [ …changed card_schedules… ],
+    documents:   { planner?: {data, version}, grade_calc?: …, preferences?: … }
+  }
+```
+
+No `since` means "everything" (first sign-in on a device). The cursor is the
+server's own clock, never the device's.
+
