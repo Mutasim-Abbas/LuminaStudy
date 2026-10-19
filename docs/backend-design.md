@@ -253,3 +253,10 @@ server's own clock, never the device's.
 | POST   | `/sync` | changed  | First-sign-in import. Skips ids that have a tombstone                                                                                  |
 | DELETE | `/:id`  | changed  | Sets `deleted_at` instead of removing the row                                                                                          |
 
+### Reviews and activity
+
+| Method | Path                      | Notes                                                                                                                                                                                                                         |
+| ------ | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/events`             | Batch of up to 500 `study_events`. For `card_review` events the body also carries the card's new schedule, and both are written in one transaction. Idempotent by event id, so the client can flush its offline queue blindly |
+| GET    | `/api/activity?from=&to=` | Per-day counts, lifetime totals and current streak, computed from `study_events`                                                                                                                                              |
+
