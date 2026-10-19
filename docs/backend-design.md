@@ -136,3 +136,23 @@ cards are never queried on their own, and per-card state lives in
 `card_schedules` below — so splitting cards into rows would add joins and buy
 nothing.
 
+### New tables
+
+```sql
+-- Spaced-repetition state, one row per card. Replaces localStorage `lumina.srs`.
+CREATE TABLE card_schedules (
+  user_id           TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  set_id            TEXT NOT NULL REFERENCES study_sets(id) ON DELETE CASCADE,
+  card_id           TEXT NOT NULL,
+  ease              REAL NOT NULL,
+  interval_days     REAL NOT NULL,
+  repetitions       INTEGER NOT NULL,
+  lapses            INTEGER NOT NULL,
+  due_at            INTEGER NOT NULL,
+  last_reviewed_at  INTEGER NOT NULL DEFAULT 0,
+  updated_at        INTEGER NOT NULL,
+  PRIMARY KEY (user_id, set_id, card_id)
+);
+CREATE INDEX idx_card_schedules_sync ON card_schedules(user_id, updated_at);
+```
+
