@@ -31,6 +31,12 @@ RUN npm ci --omit=dev --prefix server
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/server/dist ./server/dist
 
+# Litestream, for continuous backup of the database (see server/scripts/start.sh).
+# Copied from the official image and pinned by digest, not just tag: this
+# binary reads every byte of user data and holds the bucket credentials.
+COPY --from=litestream/litestream:0.5.17@sha256:4b02b9859a6b6b4087d8b8944e15f7e984bd7957cba322bbeee38b0e27b9656a \
+  /usr/local/bin/litestream /usr/local/bin/litestream
+
 # The database lives on a mounted volume, not in the image: anything written
 # to the container filesystem is lost on every redeploy. DATABASE_PATH must
 # point inside the mount for accounts and study sets to survive.
