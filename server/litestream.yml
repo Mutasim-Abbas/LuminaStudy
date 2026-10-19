@@ -1,0 +1,15 @@
+# Litestream: continuous backup of the SQLite database to an S3-compatible
+# bucket. scripts/start.sh runs the server under it; DEPLOY.md covers setup.
+#
+# ${VARS} are expanded from the environment when Litestream starts. The bucket
+# credentials are read by Litestream itself from LITESTREAM_ACCESS_KEY_ID and
+# LITESTREAM_SECRET_ACCESS_KEY, so no secret is ever written here.
+dbs:
+  - path: ${DATABASE_PATH}
+    replica:
+      type: s3
+      bucket: ${LITESTREAM_BUCKET}
+      path: lumina
+      # Only for S3-compatible providers (e.g. Backblaze B2); empty for AWS.
+      endpoint: ${LITESTREAM_ENDPOINT}
+      region: ${LITESTREAM_REGION}
