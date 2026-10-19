@@ -113,6 +113,10 @@ that file documents every option with empty values.
 | `TRUST_PROXY`     | no              | Proxy addresses to trust for client IPs     |
 | `PORT`            | no              | Defaults to `3001`                          |
 
+Backups are configured only on the deployed server: the container runs the app
+under [Litestream](https://litestream.io), which copies the database to a bucket
+as it changes. The `LITESTREAM_*` variables are listed in [DEPLOY.md](DEPLOY.md).
+
 In development a temporary `JWT_SECRET` is generated at startup if you leave it
 blank, so you can run immediately — logins just reset when the server restarts.
 In production the server refuses to boot without a strong one.

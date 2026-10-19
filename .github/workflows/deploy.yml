@@ -60,6 +60,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # The container entrypoint; ShellCheck ships with GitHub's Ubuntu runners.
+      - run: shellcheck scripts/start.sh
 
   deploy:
     needs: [build, server]
