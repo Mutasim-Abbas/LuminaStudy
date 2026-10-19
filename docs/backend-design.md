@@ -198,3 +198,30 @@ server applies every migration above the stored number, each in its own
 transaction, then bumps the number. No extra table, and a half-applied migration
 rolls back instead of leaving the schema in between.
 
+## 4. API
+
+Unchanged conventions: JSON bodies, Zod validation, errors as
+`{ error: <code>, message: <human text> }`, session cookie on every call, every
+query scoped by the session's user id. No `/v1` prefix — frontend and API ship
+in the same deploy, so they can never be out of step.
+
+### Auth — `/api/auth`
+
+| Method | Path          | Status   | Notes                                                                         |
+| ------ | ------------- | -------- | ----------------------------------------------------------------------------- |
+| GET    | `/captcha`    | existing |                                                                               |
+| POST   | `/signup`     | existing |                                                                               |
+| POST   | `/login`      | existing |                                                                               |
+| POST   | `/logout`     | existing |                                                                               |
+| POST   | `/logout-all` | **new**  | Bumps `token_version`; every other device is signed out                       |
+| GET    | `/me`         | existing |                                                                               |
+| PATCH  | `/me`         | **new**  | `{ name }` — replaces `lumina.userName`                                       |
+| DELETE | `/me`         | changed  | Now requires `{ password }`, so an unattended laptop can't delete the account |
+| POST   | `/forgot`     | existing |                                                                               |
+| POST   | `/reset`      | changed  | Also bumps `token_version` — fixes bug 2                                      |
+| GET    | `/export`     | **new**  | Everything the account owns as one JSON download (privacy-policy requirement) |
+
+Session JWT gains a `ver` claim; `requireAuth` rejects a token whose `ver` is
+below the user's `token_version`. That is one primary-key lookup per request —
+microseconds on local SQLite.
+
