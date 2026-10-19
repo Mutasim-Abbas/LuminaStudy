@@ -171,6 +171,17 @@ CREATE TABLE study_events (
   occurred_at  INTEGER NOT NULL
 );
 CREATE INDEX idx_study_events_day ON study_events(user_id, local_day);
+
+-- Small per-user documents edited as a whole: degree planner, grade calculator,
+-- preferences. Same versioning as sets.
+CREATE TABLE user_documents (
+  user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key         TEXT NOT NULL CHECK (key IN ('planner', 'grade_calc', 'preferences')),
+  data        TEXT NOT NULL,                    -- JSON
+  version     INTEGER NOT NULL DEFAULT 1,
+  updated_at  INTEGER NOT NULL,
+  PRIMARY KEY (user_id, key)
+);
 ```
 
 Why an event log for activity instead of synced counters: counters from two
