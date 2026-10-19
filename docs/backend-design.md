@@ -190,3 +190,11 @@ devices cannot be merged correctly (both say "12 reviews today" — is that 12 o
 `GROUP BY local_day`. `local_day` is recorded by the device because "today"
 means the student's day, not the server's UTC day.
 
+### Migrations
+
+Replace `CREATE TABLE IF NOT EXISTS` + `addColumnIfMissing` with an ordered list
+of migrations, numbered by SQLite's built-in `PRAGMA user_version`. On boot the
+server applies every migration above the stored number, each in its own
+transaction, then bumps the number. No extra table, and a half-applied migration
+rolls back instead of leaving the schema in between.
+
