@@ -58,4 +58,11 @@ describe('start script', () => {
     expect(run.stderr).toContain('LITESTREAM_BUCKET is not set');
     expect(run.litestream).toEqual([]);
   });
+
+  it('starts without backups in production only when told to', () => {
+    const run = start({ NODE_ENV: 'production', ALLOW_NO_BACKUP: '1' });
+    expect(run.status).toBe(0);
+    expect(run.stdout).toBe('server started\n');
+    expect(run.litestream).toEqual([]);
+  });
 });
