@@ -322,6 +322,8 @@ Each step is a separate, shippable change:
 2. Versioned migrations via `PRAGMA user_version`; Litestream in the image.
    **Done** — the restore drill in DEPLOY.md is still to run on the live host.
 3. `token_version`: revoke on reset, `logout-all`, password-confirmed delete.
+   **Done**, as server-side session records rather than a version number:
+   that also lets a single device sign out on its own.
 4. Set versions + tombstones + `GET /api/sync`.
 5. `card_schedules` + `study_events` + `/api/events` + `/api/activity`, and
    switch the frontend's SRS/activity from localStorage-only to synced.
