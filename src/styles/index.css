@@ -88,6 +88,60 @@
   animation-delay: 195ms;
 }
 
+/*
+ * Sign in with Google, per Google's branding guidelines: fixed fill, a 1px
+ * inside stroke and text colour for each theme, Google Sans Medium 14/20 (with
+ * system fallbacks, since the app doesn't ship that font). Hover and press use
+ * a translucent layer of the text colour, as Material buttons do.
+ */
+.google-button {
+  --google-fill: #ffffff;
+  --google-stroke: #747775;
+  --google-text: #1f1f1f;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 4px;
+  background: var(--google-fill);
+  color: var(--google-text);
+  box-shadow: inset 0 0 0 1px var(--google-stroke);
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  letter-spacing: 0.25px;
+  white-space: nowrap;
+}
+.google-button::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+  pointer-events: none;
+}
+.google-button:hover::after {
+  opacity: 0.08;
+}
+.google-button:active::after {
+  opacity: 0.12;
+}
+.google-button:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+:root[data-theme='dark'] .google-button {
+  --google-fill: #131314;
+  --google-stroke: #8e918f;
+  --google-text: #e3e3e3;
+}
+
 .pressable {
   transition: transform var(--duration-fast) var(--ease-pop);
 }

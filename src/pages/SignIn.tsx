@@ -1,9 +1,35 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { ApiError, fetchCaptcha, requestPasswordReset, type Captcha } from '../lib/api';
+import {
+  ApiError,
+  fetchCaptcha,
+  getHealth,
+  GOOGLE_LINK_URL,
+  GOOGLE_SIGN_IN_URL,
+  requestPasswordReset,
+  type Captcha,
+} from '../lib/api';
+import { GoogleButton } from '../components/GoogleButton';
 import { LuminaMark } from '../components/LuminaMark';
 import { SyncIcon } from '../components/icons';
+
+/**
+ * Why a Google sign-in came back here instead of into the app. The server
+ * sends a short reason code (routes/google.ts); this is what it means.
+ */
+const GOOGLE_PROBLEMS: Record<string, string> = {
+  cancelled: 'Google sign-in was cancelled.',
+  expired: 'That sign-in took too long or was started in another tab. Please try again.',
+  failed: 'Google sign-in didn’t go through. Please try again.',
+  email_unverified:
+    'Google hasn’t verified that email address, so it can’t be used to sign in yet.',
+  account_exists:
+    'This email already has a Lumina account. Sign in with your password, then connect Google from your account page.',
+  already_linked: 'That Google account is already connected to a different Lumina account.',
+  signed_out: 'Sign in first, then connect Google from your account page.',
+  unavailable: 'Google sign-in isn’t available right now.',
+};
 
 /**
  * Combined sign-in / sign-up. One form, one toggle — asking a student to find
@@ -25,10 +51,14 @@ export default function SignIn() {
   const [captcha, setCaptcha] = useState<Captcha | null>(null);
   const [captchaInput, setCaptchaInput] = useState('');
   const [captchaLoading, setCaptchaLoading] = useState(false);
+  const [searchParams] = useSearchParams();
+  const googleReason = searchParams.get('google');
   const [error, setError] = useState<string | null>(null);
   /** Set once a reset link has been requested — swaps the form for a receipt. */
   const [resetSent, setResetSent] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  /** Only offer Google when the server has a client for it. */
+  const [googleSignIn, setGoogleSignIn] = useState(false);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -54,6 +84,23 @@ export default function SignIn() {
     } finally {
       setCaptchaLoading(false);
     }
+  }, []);
+
+  // Follow the reason in the address, not just the first one: arriving at
+  // /account again with a new ?google= is not a fresh mount.
+  useEffect(() => {
+    const problem = googleReason ? GOOGLE_PROBLEMS[googleReason] : undefined;
+    if (problem) setError(problem);
+  }, [googleReason]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getHealth().then((h) => {
+      if (!cancelled) setGoogleSignIn(h.googleSignIn === true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Fetch a challenge when the sign-up form is shown, and none while signing in.
@@ -150,6 +197,20 @@ export default function SignIn() {
           <p className="mt-4 font-body text-body-md text-on-surface-variant">
             Your study sets sync to this account, so they follow you to any device.
           </p>
+          {googleReason === 'linked' ? (
+            <p className="rise-in mt-4 rounded-lg bg-surface-container px-3 py-2 font-body text-body-sm text-on-surface">
+              Google is connected. You can now sign in with either.
+            </p>
+          ) : (
+            error && (
+              <p
+                role="alert"
+                className="rise-in mt-4 rounded-lg bg-error-container px-3 py-2 font-body text-body-sm text-on-error-container"
+              >
+                {error}
+              </p>
+            )
+          )}
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
               to="/"
@@ -166,6 +227,19 @@ export default function SignIn() {
               Sign out
             </button>
           </div>
+          {googleSignIn &&
+            (user.google ? (
+              <p className="mt-8 font-label-sm text-label-sm text-on-surface-variant">
+                Google sign-in is connected to this account.
+              </p>
+            ) : (
+              <div className="mt-8 flex flex-col gap-3 border-t border-surface-variant pt-6">
+                <p className="font-body text-body-sm text-on-surface-variant">
+                  Connect your Google account to sign in with one tap next time.
+                </p>
+                <GoogleButton href={GOOGLE_LINK_URL} />
+              </div>
+            ))}
         </div>
       </div>
     );
@@ -209,7 +283,22 @@ export default function SignIn() {
             </button>
           </div>
         ) : (
-        <form onSubmit={submit} className="mt-8 flex flex-col gap-4">
+        <>
+        {/* Google first: one tap, no password, no CAPTCHA. */}
+        {!isForgot && googleSignIn && (
+          <div className="mt-8 flex flex-col gap-4">
+            <GoogleButton href={GOOGLE_SIGN_IN_URL} />
+            <div className="flex items-center gap-3 font-label-sm text-label-sm text-on-surface-variant">
+              <span className="h-px flex-1 bg-surface-variant" />
+              or use your email
+              <span className="h-px flex-1 bg-surface-variant" />
+            </div>
+          </div>
+        )}
+        <form
+          onSubmit={submit}
+          className={`${!isForgot && googleSignIn ? 'mt-4' : 'mt-8'} flex flex-col gap-4`}
+        >
           {/* Honeypot: off-screen and hidden from assistive tech. */}
           <div aria-hidden="true" className="absolute left-[-9999px] top-[-9999px] h-0 w-0 overflow-hidden">
             <label>
@@ -352,6 +441,7 @@ export default function SignIn() {
                   : 'Sign in'}
           </button>
         </form>
+        </>
         )}
 
         <p className="mt-6 text-center font-body text-body-md text-on-surface-variant">

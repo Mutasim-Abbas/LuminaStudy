@@ -225,6 +225,24 @@ describe('login', () => {
     expect(unknown.statusCode).toBe(badPass.statusCode);
     expect(unknown.json()).toEqual(badPass.json());
   });
+
+  it('refuses any password for an account made through Google', async () => {
+    db.prepare(
+      "INSERT INTO users (id, email, name, password_hash, google_sub, created_at) VALUES ('g1', 'grace@example.com', 'Grace', '', 'google-1', 1)",
+    ).run();
+    const attempt = (password: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'grace@example.com', password },
+      });
+    for (const password of ['correct horse battery', '        ']) {
+      const res = await attempt(password);
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error).toBe('invalid_credentials');
+      expect(res.cookies.find((c) => c.name === 'lumina_session')).toBeUndefined();
+    }
+  });
 });
 
 describe('session', () => {
@@ -237,6 +255,23 @@ describe('session', () => {
     const cookie = cookieFrom(await signup());
     const res = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
     expect(res.json().user.email).toBe(CREDS.email);
+  });
+
+  it('says whether Google is linked, from the account rather than the token', async () => {
+    const cookie = cookieFrom(await signup());
+    const me = () => app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    expect((await me()).json().user.google).toBe(false);
+
+    db.prepare("UPDATE users SET google_sub = 'google-1' WHERE email = ?").run(CREDS.email);
+    // Same cookie, no new sign-in: the change still shows.
+    expect((await me()).json().user.google).toBe(true);
+  });
+
+  it('stops reporting a session once the account is deleted', async () => {
+    const cookie = cookieFrom(await signup());
+    db.prepare('DELETE FROM users WHERE email = ?').run(CREDS.email);
+    const res = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    expect(res.json().user).toBeNull();
   });
 
   it('ignores a forged token', async () => {

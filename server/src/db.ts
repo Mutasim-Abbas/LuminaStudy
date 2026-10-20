@@ -59,7 +59,10 @@ export interface UserRow {
   id: string;
   email: string;
   name: string;
+  /** Empty for accounts created through Google, which have no password. */
   password_hash: string;
+  /** Google's account id once Google sign-in is linked, else null. */
+  google_sub: string | null;
   created_at: number;
 }
 

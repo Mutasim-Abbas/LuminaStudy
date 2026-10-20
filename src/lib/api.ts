@@ -39,16 +39,18 @@ export interface HealthInfo {
   ok: boolean;
   aiEnabled: boolean;
   model: string | null;
+  /** The server has a Google OAuth client, so "Continue with Google" will work. */
+  googleSignIn: boolean;
 }
 
 /** Is the AI configured on the server? Used to guide the UI before a request. */
 export async function getHealth(): Promise<HealthInfo> {
   try {
     const res = await fetch('/api/health');
-    if (!res.ok) return { ok: false, aiEnabled: false, model: null };
+    if (!res.ok) return { ok: false, aiEnabled: false, model: null, googleSignIn: false };
     return (await res.json()) as HealthInfo;
   } catch {
-    return { ok: false, aiEnabled: false, model: null };
+    return { ok: false, aiEnabled: false, model: null, googleSignIn: false };
   }
 }
 
@@ -91,7 +93,17 @@ export interface AccountUser {
   id: string;
   email: string;
   name: string;
+  /** Google sign-in is connected to this account. */
+  google: boolean;
 }
+
+/**
+ * Google sign-in is a full-page navigation, not a fetch: the server redirects
+ * the browser to Google and Google redirects it back. `?link=1` connects
+ * Google to the account that is signed in.
+ */
+export const GOOGLE_SIGN_IN_URL = '/api/auth/google';
+export const GOOGLE_LINK_URL = '/api/auth/google?link=1';
 
 export interface SignUpInput {
   name: string;

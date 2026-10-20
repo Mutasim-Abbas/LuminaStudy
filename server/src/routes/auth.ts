@@ -68,8 +68,8 @@ const signupBody = credentials.extend({
 });
 
 /** Never let a password hash leave the server. */
-function publicUser(row: Pick<UserRow, 'id' | 'email' | 'name'>) {
-  return { id: row.id, email: row.email, name: row.name };
+function publicUser(row: Pick<UserRow, 'id' | 'email' | 'name'> & { google_sub?: string | null }) {
+  return { id: row.id, email: row.email, name: row.name, google: Boolean(row.google_sub) };
 }
 
 /**
@@ -170,7 +170,12 @@ export async function authRoutes(app: FastifyInstance) {
     const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
 
     // Hash even when the user is unknown, so response time doesn't reveal it.
-    const ok = await verifyPassword(password, row?.password_hash ?? DUMMY_HASH);
+    // Accounts made through Google have no password (an empty hash); they get
+    // the same hashing work and the same answer as a wrong password, so this
+    // reveals nothing about how an account was created.
+    const ok =
+      (await verifyPassword(password, row?.password_hash || DUMMY_HASH)) &&
+      Boolean(row?.password_hash);
     if (!row || !ok) {
       recordLoginFailure(email, now);
       const after = loginLockout(email, now);
@@ -188,7 +193,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     const user = { id: row.id, email: row.email, name: row.name ?? '' };
     setSessionCookie(reply, signSession(user));
-    return reply.send({ user: publicUser(user) });
+    return reply.send({ user: publicUser(row) });
   });
 
   app.post('/api/auth/logout', async (_request, reply) => {
@@ -198,8 +203,14 @@ export async function authRoutes(app: FastifyInstance) {
 
   /** Who am I? Returns null rather than 401 so the client can boot either way. */
   app.get('/api/auth/me', async (request, reply) => {
-    const user = currentUser(request);
-    return reply.send({ user: user ? publicUser(user) : null });
+    const session = currentUser(request);
+    // Read the account itself rather than echoing the token's claims, so the
+    // answer reflects changes since sign-in — such as linking Google — and a
+    // deleted account stops looking signed in.
+    const row = session
+      ? (db.prepare('SELECT * FROM users WHERE id = ?').get(session.id) as UserRow | undefined)
+      : undefined;
+    return reply.send({ user: row ? publicUser(row) : null });
   });
 
   /** Deletes the account and, by cascade, everything it owns. */
@@ -337,7 +348,7 @@ export async function authRoutes(app: FastifyInstance) {
       // for no security gain.
       const user = { id: row.id, email: row.email, name: row.name ?? '' };
       setSessionCookie(reply, signSession(user));
-      return reply.send({ user: publicUser(user) });
+      return reply.send({ user: publicUser(row) });
     },
   );
 }

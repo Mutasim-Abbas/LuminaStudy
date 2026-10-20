@@ -66,6 +66,8 @@ rest of the account.
 | `LITESTREAM_REGION` | e.g. `us-west-004` | The bucket's region |
 | `LITESTREAM_ACCESS_KEY_ID` | the bucket key's ID | Read by Litestream only |
 | `LITESTREAM_SECRET_ACCESS_KEY` | the bucket key | Read by Litestream only |
+| `GOOGLE_CLIENT_ID` | from Google Cloud | Optional — Sign in with Google (see the section below) |
+| `GOOGLE_CLIENT_SECRET` | from Google Cloud | Optional — server-side only |
 
 `PORT` is injected by the platform — do not set it.
 
@@ -115,6 +117,35 @@ The count should match the live one. This touches nothing in use. Before real
 users arrive, also run the full drill once: attach a fresh, empty volume at
 `/data` and redeploy. The start script should restore the database from the
 bucket on boot, and the test account should still sign in.
+
+## Optional: Sign in with Google
+
+Without these two variables the app works as before and simply doesn't show
+the Google button. With them, students can sign up and sign in with one tap.
+
+1. [Google Cloud console](https://console.cloud.google.com) → create a project.
+2. **Google Auth Platform** → **Branding**: app name `Lumina Study`, a support
+   email and a developer contact email. **Audience**: External. The default
+   `openid`, `email` and `profile` scopes are all it needs — Google treats them
+   as non-sensitive, so no app review is required.
+3. **Clients** → **Create client** → **Web application**. Add one authorized
+   redirect URI, exactly: `https://<your-domain>/api/auth/google/callback` —
+   your `APP_URL` plus that path. Google matches it character for character.
+4. Copy the client ID and secret (the secret is shown only once) into
+   `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and redeploy.
+   `/api/health` should now report `"googleSignIn":true`.
+5. **Audience** → **Publish app**. Until then only listed test users (up to 100)
+   can sign in.
+6. To show "Lumina Study" and its logo on Google's consent screen, Google
+   checks the brand: verify the domain in Google Search Console, and have a
+   public homepage that describes the app with a privacy policy on the same
+   domain, linked from both the homepage and the consent screen.
+
+How accounts behave: signing in with Google creates an account with no
+password. If an email already has a password account, Google sign-in does not
+join it automatically — the owner signs in with the password, then connects
+Google from the account page. That stops someone who registered an address they
+don't own from sharing the real owner's account.
 
 ## Notes
 
