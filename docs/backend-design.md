@@ -216,10 +216,11 @@ in the same deploy, so they can never be out of step.
 | POST   | `/logout-all` | **new**  | Bumps `token_version`; every other device is signed out                       |
 | GET    | `/me`         | existing |                                                                               |
 | PATCH  | `/me`         | **new**  | `{ name }` — replaces `lumina.userName`                                       |
-| DELETE | `/me`         | changed  | Now requires `{ password }`, so an unattended laptop can't delete the account |
+| DELETE | `/me`         | changed  | Now requires `{ password }`, so an unattended laptop can't delete the account. An account made through Google has no password, so it confirms with a fresh Google sign-in instead |
 | POST   | `/forgot`     | existing |                                                                               |
 | POST   | `/reset`      | changed  | Also bumps `token_version` — fixes bug 2                                      |
 | GET    | `/export`     | **new**  | Everything the account owns as one JSON download (privacy-policy requirement) |
+| GET    | `/google`, `/google/callback` | **done** | Sign in with Google; `?link=1` connects it to the signed-in account |
 
 Session JWT gains a `ver` claim; `requireAuth` rejects a token whose `ver` is
 below the user's `token_version`. That is one primary-key lookup per request —
