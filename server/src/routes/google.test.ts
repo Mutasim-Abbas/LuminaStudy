@@ -17,6 +17,7 @@ const google = fakeGoogle(CLIENT_ID);
 let app: FastifyInstance;
 let db: (typeof import('../db.js'))['db'];
 let clearSigningKeyCache: () => void;
+let signSession: (typeof import('../lib/auth.js'))['signSession'];
 
 beforeAll(async () => {
   vi.stubEnv('GOOGLE_CLIENT_ID', CLIENT_ID);
@@ -24,6 +25,7 @@ beforeAll(async () => {
   vi.stubEnv('APP_URL', APP_URL);
   ({ db } = await import('../db.js'));
   ({ clearSigningKeyCache } = await import('../lib/google.js'));
+  ({ signSession } = await import('../lib/auth.js'));
   const { buildApp } = await import('../app.js');
   app = await buildApp();
 });
@@ -216,6 +218,41 @@ describe('an email that already has a password account', () => {
     const res = await finish(await begin());
     expect(landing(res)).toBe('/#/account?google=account_exists');
     expect(sessionFrom(res)).toBeUndefined();
+    expect(db.prepare('SELECT google_sub FROM users').get()).toEqual({ google_sub: null });
+  });
+});
+
+describe('connecting Google to a password account', () => {
+  /** Ada, signed in with her password. */
+  function passwordAccount(id = 'p1', email = 'ada@example.com') {
+    db.prepare(
+      "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, 'Ada', 'scrypt$00$00', 1)",
+    ).run(id, email);
+    return `lumina_session=${signSession({ id, email, name: 'Ada' })}`;
+  }
+
+  it('links the Google account, and Google sign-in then opens that account', async () => {
+    const session = passwordAccount();
+    const attempt = await begin({ link: true, session });
+    const res = await finish(attempt, { cookies: `${attempt.flowCookie}; ${session}` });
+    expect(landing(res)).toBe('/#/account?google=linked');
+    expect(db.prepare("SELECT google_sub FROM users WHERE id = 'p1'").get()).toEqual({
+      google_sub: 'google-sub-1',
+    });
+
+    // A Google account with a different email can be linked; it is the
+    // Google id that counts from now on.
+    const signIn = await finish(await begin());
+    expect(landing(signIn)).toBe('/#/');
+    expect(db.prepare('SELECT count(*) AS n FROM users').get()).toEqual({ n: 1 });
+  });
+
+  it('does not finish linking if that account is no longer signed in', async () => {
+    const session = passwordAccount();
+    const attempt = await begin({ link: true, session });
+    // Back from Google without the session (signed out, or another browser).
+    const res = await finish(attempt);
+    expect(landing(res)).toBe('/#/account?google=signed_out');
     expect(db.prepare('SELECT google_sub FROM users').get()).toEqual({ google_sub: null });
   });
 });
