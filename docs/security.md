@@ -28,6 +28,24 @@ starts. The open items are listed honestly in §4.
 | Logs | Request logs record the path only, no query string | Google's one-time authorization code arrives in the callback's query string |
 | Local secrets | `server/.env` readable by the owner only (`chmod 600`) | Other accounts on the machine could read it |
 
+### Second round, after an outside review
+
+An outside review of this report (written without access to the code) raised
+the gaps below. Each was checked against the code; the ones that held up were
+fixed, with tests that fail on the old code.
+
+| Area | Change | Why |
+| --- | --- | --- |
+| Sessions | Server-side session records; the cookie's JWT names one, and every request checks it still exists | A password reset or sign-out couldn't end a stolen session, and a deleted account's cookie still worked on protected routes for up to 7 days |
+| Sign-out | Ends this browser's session on the server; "sign out of all devices" ends them everywhere | Clearing the cookie left any copy of it working |
+| Password reset | Ends every session in the same transaction as the new password | A reset is often the response to a stolen login |
+| Account deletion | Needs the password again, or a Google confirmation within five minutes | Anyone at an unlocked, signed-in browser could delete the account |
+| AI quota | A slot is reserved atomically before the AI call and returned if it fails | Checking first and recording after let five simultaneous requests all through a limit of three (found by the review) |
+| Tokens | The JWT carries only the account and session ids | A JWT is signed, not encrypted: the email and name were readable by whoever held it |
+| Cross-site requests | State-changing API requests from another site's Origin, or marked cross-site, are refused | A second CSRF defence that doesn't rely on SameSite cookies |
+| Reset links | The token is removed from the address bar once read | So it doesn't linger in history, bookmarks or screenshots |
+| CI | gitleaks scans every commit on every push; Dependabot proposes updates weekly | A clean audit is only true on the day it ran |
+
 ## 2. Controls in place
 
 ### 2.1 Secrets and configuration
