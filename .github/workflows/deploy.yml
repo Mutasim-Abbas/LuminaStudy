@@ -86,7 +86,7 @@ jobs:
           git --redact --verbose /repo
 
   deploy:
-    needs: [build, server]
+    needs: [build, server, secrets]
     runs-on: ubuntu-latest
     environment:
       name: github-pages
