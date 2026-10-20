@@ -128,6 +128,16 @@ export async function googleRoutes(app: FastifyInstance) {
       return fail(reply, err.reason === 'email_unverified' ? 'email_unverified' : 'failed');
     }
 
+    if (flow.linkUserId) {
+      // Connecting Google to the signed-in account. The session must still be
+      // the one that started this: someone else may have signed in since.
+      const session = currentUser(request);
+      if (!session || session.id !== flow.linkUserId) return fail(reply, 'signed_out');
+      db.prepare('UPDATE users SET google_sub = ? WHERE id = ?').run(identity.sub, session.id);
+      request.log.info({ userId: session.id }, 'google linked to account');
+      return reply.redirect(appUrl('/account?google=linked'));
+    }
+
     // Keyed on Google's account id, which never changes — not on the email.
     const linked = db.prepare('SELECT * FROM users WHERE google_sub = ?').get(identity.sub) as
       | UserRow
