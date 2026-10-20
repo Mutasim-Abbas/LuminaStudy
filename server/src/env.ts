@@ -29,6 +29,11 @@ const schema = z.object({
   OPENAI_COMPAT_MODEL: z.string().default('llama-3.3-70b-versatile'),
   JWT_SECRET: z.string().optional(),
   DATABASE_PATH: z.string().default('data/lumina.db'),
+  // A Turso database (libsql://…) for when the server runs as stateless
+  // functions with no disk of its own, e.g. on Vercel. Leave empty to use the
+  // local SQLite file at DATABASE_PATH.
+  DATABASE_URL: cleanSecret,
+  DATABASE_AUTH_TOKEN: cleanSecret,
   // --- Password-reset email ---
   // Optional: with no key the reset link is logged to the server console
   // instead of emailed, so local development works with nothing to configure.
@@ -89,6 +94,13 @@ const trustProxy: string[] | false = trustProxyList?.length
   : raw.NODE_ENV === 'production'
     ? PRIVATE_RANGES
     : false;
+
+// A remote Turso database refuses every query without its token. Fail at boot
+// with a clear message rather than on the first request.
+if (raw.DATABASE_URL?.startsWith('libsql://') && !raw.DATABASE_AUTH_TOKEN) {
+  console.error('DATABASE_AUTH_TOKEN must be set to use the Turso database in DATABASE_URL.');
+  process.exit(1);
+}
 
 // GROQ_API_KEY is an accepted alias for OPENAI_COMPAT_API_KEY.
 const compatKey = raw.OPENAI_COMPAT_API_KEY ?? raw.GROQ_API_KEY;
