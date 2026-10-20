@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { database, type UserRow } from '../db.js';
 import { env } from '../env.js';
 import { currentSession, startSession } from '../lib/auth.js';
+import { markReauthenticated } from '../lib/sessions.js';
 import {
   createAuthRequest,
   exchangeCode,
@@ -31,6 +32,8 @@ export interface Flow {
   codeVerifier: string;
   /** Set when a signed-in user is connecting Google to their account. */
   linkUserId?: string;
+  /** Set when a signed-in user is re-confirming who they are, e.g. before deleting the account. */
+  confirmUserId?: string;
 }
 
 /** A page of our own app. Never a URL taken from the request. */
@@ -79,10 +82,14 @@ export async function googleRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: 'not_configured', message: 'Google sign-in is off.' });
     }
 
-    // ?link=1 connects Google to the account that is signed in right now.
-    const linking = (request.query as { link?: string }).link === '1';
+    // ?link=1 connects Google to the account that is signed in right now;
+    // ?confirm=1 re-checks that the signed-in person controls its Google
+    // account, for actions that need a fresh check (deleting the account).
+    const query = request.query as { link?: string; confirm?: string };
+    const linking = query.link === '1';
+    const confirming = !linking && query.confirm === '1';
     const session = (await currentSession(request))?.user;
-    if (linking && !session) return fail(reply, 'signed_out');
+    if ((linking || confirming) && !session) return fail(reply, 'signed_out');
 
     const auth = createAuthRequest(env.GOOGLE_CLIENT_ID!, env.googleRedirectUri);
     const flow: Flow = {
@@ -90,6 +97,7 @@ export async function googleRoutes(app: FastifyInstance) {
       nonce: auth.nonce,
       codeVerifier: auth.codeVerifier,
       ...(linking && session ? { linkUserId: session.id } : {}),
+      ...(confirming && session ? { confirmUserId: session.id } : {}),
     };
     reply.setCookie(FLOW_COOKIE, JSON.stringify(flow), {
       signed: true,
@@ -132,6 +140,16 @@ export async function googleRoutes(app: FastifyInstance) {
       if (!(err instanceof GoogleAuthError)) throw err;
       request.log.warn({ reason: err.reason, detail: err.message }, 'google sign-in refused');
       return fail(reply, err.reason === 'email_unverified' ? 'email_unverified' : 'failed');
+    }
+
+    if (flow.confirmUserId) {
+      // Must be the same signed-in session's account, and the same Google
+      // account it is linked to — not just any Google account.
+      const current = await currentSession(request);
+      if (!current || current.user.id !== flow.confirmUserId) return fail(reply, 'signed_out');
+      if (current.user.google_sub !== identity.sub) return fail(reply, 'wrong_account');
+      await markReauthenticated(current.sessionId, Date.now());
+      return reply.redirect(appUrl('/account?google=confirmed'));
     }
 
     if (flow.linkUserId) {
