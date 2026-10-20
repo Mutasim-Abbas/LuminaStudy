@@ -199,14 +199,14 @@ export async function generateStudySet(opts: {
     });
     rawText = response.text;
   } catch (err) {
-    // Never leak upstream internals to the client.
+    // Never leak upstream internals to the client: the SDK's message goes to
+    // the log as the detail, the user gets a plain sentence.
     const message = err instanceof Error ? err.message : 'Upstream AI request failed.';
     const unauthorized = /401|unauthorized|invalid auth|api key/i.test(message);
     throw new GeminiError(
-      unauthorized
-        ? 'Gemini rejected the API key. Check GEMINI_API_KEY in the server .env.'
-        : `AI request failed: ${message.slice(0, 200)}`,
-      unauthorized ? 401 : 502,
+      unauthorized ? 'AI generation isn’t available right now.' : 'The AI request failed. Please try again.',
+      unauthorized ? 503 : 502,
+      message.slice(0, 500),
     );
   }
 
