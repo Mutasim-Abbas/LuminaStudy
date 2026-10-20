@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 
 /**
@@ -12,11 +12,12 @@ import type { FastifyInstance } from 'fastify';
 
 let app: FastifyInstance;
 let cookie: string;
+let database: (typeof import('../db.js'))['database'];
 
 beforeAll(async () => {
   vi.stubEnv('GROQ_API_KEY', 'gsk_test_key_not_a_real_one');
   const { buildApp } = await import('../app.js');
-  const { database } = await import('../db.js');
+  ({ database } = await import('../db.js'));
   const { sessionCookieFor } = await import('../testing/sessions.js');
   app = await buildApp();
   await database.run(
@@ -32,6 +33,10 @@ afterAll(async () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+beforeEach(async () => {
+  await database.exec('DELETE FROM ai_usage');
 });
 
 /** Ask for a study set while the provider answers with `status` and `body`. */
@@ -75,7 +80,49 @@ describe('when the AI provider fails', () => {
 
   it('does not spend one of the free generations', async () => {
     await generateWhileProviderSays(500, 'boom');
-    const quota = await app.inject({ method: 'GET', url: '/api/generate/quota', headers: { cookie } });
+    const quota = await app.inject({
+      method: 'GET',
+      url: '/api/generate/quota',
+      headers: { cookie },
+    });
     expect(quota.json()).toMatchObject({ used: 0, remaining: 3 });
+  });
+});
+
+describe('the daily AI allowance', () => {
+  it('holds under simultaneous requests: five at once, three get through', async () => {
+    const content = {
+      subject: 'Biology',
+      title: 'Cells',
+      summary: 'Cells make energy.',
+      highlights: ['Mitochondria make ATP.'],
+      flashcards: [{ front: 'What makes ATP?', back: 'Mitochondria' }],
+      quiz: [
+        {
+          prompt: 'ATP is made by?',
+          options: ['Mitochondria', 'Ribosomes'],
+          answerIndex: 0,
+          explanation: '',
+        },
+      ],
+    };
+    // A slow provider, so every request is in flight before any finishes.
+    vi.stubGlobal('fetch', async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return Response.json({ choices: [{ message: { content: JSON.stringify(content) } }] });
+    });
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        app.inject({
+          method: 'POST',
+          url: '/api/generate',
+          headers: { cookie },
+          payload: { text: 'Mitochondria are the powerhouse of the cell, producing ATP.' },
+        }),
+      ),
+    );
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 200, 200, 402, 402]);
+    expect(await database.get('SELECT COUNT(*) AS n FROM ai_usage')).toEqual({ n: 3 });
   });
 });
