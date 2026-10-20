@@ -239,6 +239,23 @@ describe('session', () => {
     expect(res.json().user.email).toBe(CREDS.email);
   });
 
+  it('says whether Google is linked, from the account rather than the token', async () => {
+    const cookie = cookieFrom(await signup());
+    const me = () => app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    expect((await me()).json().user.google).toBe(false);
+
+    db.prepare("UPDATE users SET google_sub = 'google-1' WHERE email = ?").run(CREDS.email);
+    // Same cookie, no new sign-in: the change still shows.
+    expect((await me()).json().user.google).toBe(true);
+  });
+
+  it('stops reporting a session once the account is deleted', async () => {
+    const cookie = cookieFrom(await signup());
+    db.prepare('DELETE FROM users WHERE email = ?').run(CREDS.email);
+    const res = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    expect(res.json().user).toBeNull();
+  });
+
   it('ignores a forged token', async () => {
     const res = await app.inject({
       method: 'GET',
