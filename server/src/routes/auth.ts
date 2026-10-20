@@ -263,7 +263,7 @@ export async function authRoutes(app: FastifyInstance) {
         | undefined;
 
       if (row) {
-        const token = createResetToken(row.id, now);
+        const token = await createResetToken(row.id, now);
         // HashRouter: the client route lives after the '#'.
         const resetUrl = `${env.APP_URL}/#/reset?token=${encodeURIComponent(token)}`;
         try {
@@ -276,7 +276,7 @@ export async function authRoutes(app: FastifyInstance) {
         }
       }
 
-      pruneResetTokens(now);
+      await pruneResetTokens(now);
       return reply.send(generic);
     },
   );
@@ -317,7 +317,7 @@ export async function authRoutes(app: FastifyInstance) {
       }
 
       const now = Date.now();
-      const userId = resolveResetToken(parsed.data.token, now);
+      const userId = await resolveResetToken(parsed.data.token, now);
       if (!userId) {
         return reply.code(400).send({
           error: 'invalid_token',
@@ -337,7 +337,7 @@ export async function authRoutes(app: FastifyInstance) {
         await hashPassword(parsed.data.password),
         userId,
       );
-      consumeResetToken(parsed.data.token, now);
+      await consumeResetToken(parsed.data.token, now);
 
       // Someone who just proved control of the inbox shouldn't still be serving
       // out a lockout earned by forgetting the old password.
