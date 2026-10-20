@@ -95,6 +95,8 @@ export interface AccountUser {
   name: string;
   /** Google sign-in is connected to this account. */
   google: boolean;
+  /** The account has a password (accounts made through Google don't). */
+  password: boolean;
 }
 
 /**
@@ -104,6 +106,8 @@ export interface AccountUser {
  */
 export const GOOGLE_SIGN_IN_URL = '/api/auth/google';
 export const GOOGLE_LINK_URL = '/api/auth/google?link=1';
+/** Re-confirms the signed-in account with Google, for actions that need a fresh check. */
+export const GOOGLE_CONFIRM_URL = '/api/auth/google?confirm=1';
 
 export interface SignUpInput {
   name: string;
@@ -169,6 +173,23 @@ export async function signIn(email: string, password: string): Promise<AccountUs
 
 export async function signOut(): Promise<void> {
   await request('/api/auth/logout', { method: 'POST' });
+}
+
+/** Ends every session of the account, on every device — this one included. */
+export async function signOutEverywhere(): Promise<void> {
+  await request('/api/auth/logout-all', { method: 'POST' });
+}
+
+/**
+ * Permanently deletes the account and everything in it. Needs the password,
+ * or — for an account without one — a Google confirmation in the last few
+ * minutes (see GOOGLE_CONFIRM_URL).
+ */
+export async function deleteAccount(password?: string): Promise<void> {
+  await request('/api/auth/me', {
+    method: 'DELETE',
+    body: JSON.stringify(password ? { password } : {}),
+  });
 }
 
 /**
