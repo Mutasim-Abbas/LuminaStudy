@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import type { DatabaseSync } from 'node:sqlite';
-import { createClient } from '@libsql/client';
+import type { Client } from '@libsql/client';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { env } from './env.js';
@@ -63,11 +63,27 @@ export async function openDatabase(path: string): Promise<AsyncDatabase> {
 }
 
 /**
+ * The libSQL client for a URL. A remote Turso database gets the fetch-only web
+ * client, which has no native code. The full client loads a native driver at
+ * import time, choosing the binary by a name built at runtime — invisible to
+ * Vercel's bundler, so a function that imports it fails to start. Only local
+ * `file:` databases (tests, Docker) need the full client, and only they load it.
+ */
+export async function libsqlClient(url: string, authToken?: string): Promise<Client> {
+  if (url.startsWith('file:') || url === ':memory:') {
+    const { createClient } = await import('@libsql/client');
+    return createClient({ url, authToken });
+  }
+  const { createClient } = await import('@libsql/client/web');
+  return createClient({ url, authToken });
+}
+
+/**
  * Opens a libSQL database — Turso (`libsql://…` with its token) or a local
  * `file:` URL — schema up to date.
  */
 export async function openTurso(url: string, authToken?: string): Promise<AsyncDatabase> {
-  const database = libsqlDatabase(createClient({ url, authToken }));
+  const database = libsqlDatabase(await libsqlClient(url, authToken));
   await runMigrations(database);
   return database;
 }

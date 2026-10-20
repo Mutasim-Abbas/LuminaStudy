@@ -54,7 +54,9 @@ with two backends that pass the same contract test suite:
 
 - **Turso** (`libsqlDatabase.ts`, `@libsql/client`) when `DATABASE_URL` is set —
   the production setup on Vercel, where the API is a stateless function with no
-  disk of its own.
+  disk of its own. Remote databases use the client's fetch-only web build: the
+  full build loads a native driver Vercel's bundler can't trace, and the
+  function wouldn't start.
 - **Local SQLite** (`sqliteDatabase.ts`, Node's built-in `node:sqlite`)
   otherwise — development, tests, and the Docker image. WAL mode, foreign keys
   on, `synchronous = NORMAL`, and a 5-second busy timeout so writes wait out

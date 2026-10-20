@@ -2,7 +2,9 @@ import { randomBytes } from 'node:crypto';
 import { config } from 'dotenv';
 import { z } from 'zod';
 
-config();
+// Tests run on the settings in vitest.config.ts alone: a developer's local
+// .env — a real AI key, a different APP_URL — must not change what they test.
+if (process.env.NODE_ENV !== 'test') config();
 
 // Users paste keys into Notepad — tolerate stray spaces/quotes around them.
 const cleanSecret = z
@@ -16,7 +18,8 @@ const cleanSecret = z
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
-  CORS_ORIGIN: z.string().url().default('http://localhost:5174'),
+  // The frontend's origin, for CORS. Like APP_URL, optional on Vercel.
+  CORS_ORIGIN: z.string().url().optional(),
   // Addresses of the reverse proxies in front of the server (see `trustProxy`).
   TRUST_PROXY: z.string().optional(),
   GEMINI_API_KEY: cleanSecret,
@@ -40,7 +43,12 @@ const schema = z.object({
   RESEND_API_KEY: cleanSecret,
   MAIL_FROM: z.string().default('Lumina Study <onboarding@resend.dev>'),
   // Base URL the reset link points at — must be where the app is served from.
-  APP_URL: z.string().url().default('http://localhost:3001'),
+  // On Vercel it can be left unset: see `appUrl` below.
+  APP_URL: z.string().url().optional(),
+  // Set by Vercel itself on every deployment: bare hostnames, no https://.
+  VERCEL_PROJECT_PRODUCTION_URL: z.string().optional(),
+  VERCEL_URL: z.string().optional(),
+  VERCEL_BRANCH_URL: z.string().optional(),
   // --- Sign in with Google (optional) ---
   // An OAuth client of type "Web application" from Google Cloud. Without both,
   // the Google button is simply not offered.
@@ -108,11 +116,39 @@ if (raw.DATABASE_URL?.startsWith('libsql://') && !raw.DATABASE_AUTH_TOKEN) {
   process.exit(1);
 }
 
+/** `https://` plus a hostname Vercel provides, or undefined off Vercel. */
+function vercelOrigin(host: string | undefined): string | undefined {
+  return host ? `https://${host}` : undefined;
+}
+
+/**
+ * Where the app is served from: reset links, Google's redirect and the
+ * cross-site check all depend on it. An explicit APP_URL wins; on Vercel the
+ * project's production address is known without being told, so a first deploy
+ * works before anyone has seen the URL it will get.
+ */
+const appUrl =
+  raw.APP_URL ?? vercelOrigin(raw.VERCEL_PROJECT_PRODUCTION_URL) ?? 'http://localhost:3001';
+
+/** The frontend's origin: the Vite dev server locally, the same site on Vercel. */
+const corsOrigin =
+  raw.CORS_ORIGIN ?? vercelOrigin(raw.VERCEL_PROJECT_PRODUCTION_URL) ?? 'http://localhost:5174';
+
 // GROQ_API_KEY is an accepted alias for OPENAI_COMPAT_API_KEY.
 const compatKey = raw.OPENAI_COMPAT_API_KEY ?? raw.GROQ_API_KEY;
 
 export const env = {
   ...raw,
+  APP_URL: appUrl,
+  CORS_ORIGIN: corsOrigin,
+  /**
+   * This deployment's own addresses besides the production one: its unique
+   * URL and its branch URL on Vercel. A preview deployment is served from
+   * these, so writes from them are not cross-site. Empty off Vercel.
+   */
+  deploymentOrigins: [raw.VERCEL_URL, raw.VERCEL_BRANCH_URL]
+    .map(vercelOrigin)
+    .filter((origin): origin is string => origin !== undefined),
   OPENAI_COMPAT_API_KEY: compatKey,
   JWT_SECRET: jwtSecret,
   trustProxy,
@@ -136,5 +172,5 @@ export const env = {
    * request's Host header, which the client controls. Google matches it
    * character for character against the client's registered redirect URIs.
    */
-  googleRedirectUri: new URL('/api/auth/google/callback', raw.APP_URL).toString(),
+  googleRedirectUri: new URL('/api/auth/google/callback', appUrl).toString(),
 } as const;
