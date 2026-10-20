@@ -16,7 +16,8 @@ const cleanSecret = z
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().int().positive().default(3001),
-  CORS_ORIGIN: z.string().url().default('http://localhost:5174'),
+  // The frontend's origin, for CORS. Like APP_URL, optional on Vercel.
+  CORS_ORIGIN: z.string().url().optional(),
   // Addresses of the reverse proxies in front of the server (see `trustProxy`).
   TRUST_PROXY: z.string().optional(),
   GEMINI_API_KEY: cleanSecret,
@@ -125,12 +126,17 @@ function vercelOrigin(host: string | undefined): string | undefined {
 const appUrl =
   raw.APP_URL ?? vercelOrigin(raw.VERCEL_PROJECT_PRODUCTION_URL) ?? 'http://localhost:3001';
 
+/** The frontend's origin: the Vite dev server locally, the same site on Vercel. */
+const corsOrigin =
+  raw.CORS_ORIGIN ?? vercelOrigin(raw.VERCEL_PROJECT_PRODUCTION_URL) ?? 'http://localhost:5174';
+
 // GROQ_API_KEY is an accepted alias for OPENAI_COMPAT_API_KEY.
 const compatKey = raw.OPENAI_COMPAT_API_KEY ?? raw.GROQ_API_KEY;
 
 export const env = {
   ...raw,
   APP_URL: appUrl,
+  CORS_ORIGIN: corsOrigin,
   OPENAI_COMPAT_API_KEY: compatKey,
   JWT_SECRET: jwtSecret,
   trustProxy,
