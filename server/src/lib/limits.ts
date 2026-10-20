@@ -103,13 +103,36 @@ export async function aiQuota(userId: string, nowMs: number): Promise<QuotaStatu
   };
 }
 
-export async function recordAiUse(userId: string, nowMs: number): Promise<void> {
-  await database.run(
-    'INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)',
-    randomUUID(),
-    userId,
-    nowMs,
-  );
+/**
+ * Takes one generation from the user's allowance, if any is left, and returns
+ * the reservation's id — or null when the allowance is spent.
+ *
+ * The count and the insert happen in one transaction, before the slow AI call.
+ * Checking first and recording after the call would let several requests sent
+ * at once all pass the check while none had been recorded yet.
+ */
+export async function reserveAiUse(userId: string, nowMs: number): Promise<string | null> {
+  const id = randomUUID();
+  return database.transaction(async (tx) => {
+    const row = await tx.get<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM ai_usage WHERE user_id = ? AND created_at > ?',
+      userId,
+      nowMs - AI_WINDOW_MS,
+    );
+    if (Number(row?.n ?? 0) >= AI_FREE_PER_DAY) return null;
+    await tx.run(
+      'INSERT INTO ai_usage (id, user_id, created_at) VALUES (?, ?, ?)',
+      id,
+      userId,
+      nowMs,
+    );
+    return id;
+  });
+}
+
+/** Gives a reserved generation back — the AI call failed, so it shouldn't count. */
+export async function releaseAiUse(reservationId: string): Promise<void> {
+  await database.run('DELETE FROM ai_usage WHERE id = ?', reservationId);
 }
 
 /** "in 3 hours", "in 12 minutes" — for telling the user when to come back. */
