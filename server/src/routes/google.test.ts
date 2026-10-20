@@ -155,3 +155,35 @@ describe('the callback refuses', () => {
     expect(cleared?.value).toBe('');
   });
 });
+
+describe('signing in with Google', () => {
+  it('creates an account for someone new and signs them in', async () => {
+    const res = await finish(await begin());
+    expect(landing(res)).toBe('/#/');
+
+    const session = sessionFrom(res);
+    expect(session).toBeDefined();
+    const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: session! } });
+    expect(me.json().user).toMatchObject({
+      email: 'grace@example.com',
+      name: 'Grace Hopper',
+      google: true,
+    });
+
+    // No password: the account can only be entered through Google.
+    const row = db.prepare('SELECT password_hash, google_sub FROM users').get();
+    expect(row).toEqual({ password_hash: '', google_sub: 'google-sub-1' });
+  });
+
+  it('falls back to the email name when Google gives none', async () => {
+    const res = await finish(await begin(), { claims: { name: undefined } });
+    expect(landing(res)).toBe('/#/');
+    expect(db.prepare('SELECT name FROM users').get()).toEqual({ name: 'grace' });
+  });
+
+  it('refuses an email Google has not verified', async () => {
+    const res = await finish(await begin(), { claims: { email_verified: false } });
+    expect(landing(res)).toBe('/#/account?google=email_unverified');
+    expect(db.prepare('SELECT count(*) AS n FROM users').get()).toEqual({ n: 0 });
+  });
+});
