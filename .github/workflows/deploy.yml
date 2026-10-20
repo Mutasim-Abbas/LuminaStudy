@@ -22,7 +22,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Same as Vercel's runtime (engines in package.json).
+          node-version: 24
           cache: npm
 
       - run: npm ci
