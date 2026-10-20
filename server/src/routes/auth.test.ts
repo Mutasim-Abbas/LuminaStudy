@@ -327,6 +327,22 @@ describe('session', () => {
     const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: laptop } });
     expect(me.json().user.email).toBe(CREDS.email);
   });
+
+  it('signs out every device with sign out everywhere', async () => {
+    const first = cookieFrom(await signup());
+    const second = cookieFrom(await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }));
+    const res = await app.inject({ method: 'POST', url: '/api/auth/logout-all', headers: { cookie: first } });
+    expect(res.statusCode).toBe(200);
+    for (const cookie of [first, second]) {
+      const sets = await app.inject({ method: 'GET', url: '/api/sets', headers: { cookie } });
+      expect(sets.statusCode).toBe(401);
+    }
+  });
+
+  it('only lets a signed-in account sign out everywhere', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/auth/logout-all' });
+    expect(res.statusCode).toBe(401);
+  });
 });
 
 describe('sign-in lockout', () => {
