@@ -44,8 +44,16 @@ export async function generateViaOpenAICompat(opts: {
 
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    if (res.status === 401) throw new GeminiError('The AI provider rejected the API key. Check the server .env.', 401);
-    throw new GeminiError(`AI request failed (${res.status}): ${body.slice(0, 150)}`, 502);
+    // The provider's body can name its account and limits (a rate-limit error
+    // includes the organization id), so it goes to the log, not the user.
+    const detail = `HTTP ${res.status}: ${body.slice(0, 500)}`;
+    if (res.status === 401) {
+      throw new GeminiError('AI generation isn’t available right now.', 503, `key rejected — ${detail}`);
+    }
+    if (res.status === 429) {
+      throw new GeminiError('The AI is busy right now. Please try again in a minute.', 503, detail);
+    }
+    throw new GeminiError('The AI request failed. Please try again.', 502, detail);
   }
 
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
