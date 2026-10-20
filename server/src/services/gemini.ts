@@ -31,11 +31,17 @@ export interface GeneratedSet {
   quiz: GeneratedQuestion[];
 }
 
-/** Thrown when the AI isn't configured or the upstream call fails. */
+/**
+ * Thrown when the AI isn't configured or the upstream call fails. `message`
+ * is shown to the user; `detail` — what the provider actually said — is for
+ * the server log only, since it can name the provider account, its limits or
+ * its configuration.
+ */
 export class GeminiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly detail?: string,
   ) {
     super(message);
     this.name = 'GeminiError';
@@ -164,7 +170,7 @@ export async function generateStudySet(opts: {
   questions?: number;
 }): Promise<GeneratedSet> {
   if (!env.aiEnabled) {
-    throw new GeminiError('AI is not configured on the server (no API key in .env).', 503);
+    throw new GeminiError('AI generation isn’t available right now.', 503, 'no AI provider key configured');
   }
 
   // Prefer the OpenAI-compatible provider when configured (reliable while
@@ -175,7 +181,7 @@ export async function generateStudySet(opts: {
   }
 
   if (!env.GEMINI_API_KEY) {
-    throw new GeminiError('AI is not configured on the server (missing GEMINI_API_KEY).', 503);
+    throw new GeminiError('AI generation isn’t available right now.', 503, 'GEMINI_API_KEY is not set');
   }
 
   const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY });
@@ -193,14 +199,14 @@ export async function generateStudySet(opts: {
     });
     rawText = response.text;
   } catch (err) {
-    // Never leak upstream internals to the client.
+    // Never leak upstream internals to the client: the SDK's message goes to
+    // the log as the detail, the user gets a plain sentence.
     const message = err instanceof Error ? err.message : 'Upstream AI request failed.';
     const unauthorized = /401|unauthorized|invalid auth|api key/i.test(message);
     throw new GeminiError(
-      unauthorized
-        ? 'Gemini rejected the API key. Check GEMINI_API_KEY in the server .env.'
-        : `AI request failed: ${message.slice(0, 200)}`,
-      unauthorized ? 401 : 502,
+      unauthorized ? 'AI generation isn’t available right now.' : 'The AI request failed. Please try again.',
+      unauthorized ? 503 : 502,
+      message.slice(0, 500),
     );
   }
 
