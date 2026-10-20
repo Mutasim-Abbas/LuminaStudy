@@ -789,6 +789,44 @@ describe('per-user isolation', () => {
   });
 });
 
+describe('deleting an account', () => {
+  const del = (cookie: string, payload?: object) =>
+    app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie }, payload });
+
+  it('needs the password, not just a signed-in browser', async () => {
+    const cookie = cookieFrom(await signup());
+    const res = await del(cookie);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('reauth_required');
+    expect(await database.get('SELECT COUNT(*) AS n FROM users')).toEqual({ n: 1 });
+  });
+
+  it('refuses a wrong password and counts it towards the lockout', async () => {
+    const cookie = cookieFrom(await signup());
+    const res = await del(cookie, { password: 'not my password' });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('reauth_failed');
+    expect(await database.get('SELECT COUNT(*) AS n FROM login_attempts')).toEqual({ n: 1 });
+    expect(await database.get('SELECT COUNT(*) AS n FROM users')).toEqual({ n: 1 });
+  });
+
+  it('stops accepting passwords once locked out', async () => {
+    const cookie = cookieFrom(await signup());
+    for (let i = 0; i < 5; i++) await del(cookie, { password: `guess number ${i}` });
+    const res = await del(cookie, { password: CREDS.password });
+    expect(res.statusCode).toBe(429);
+    expect(await database.get('SELECT COUNT(*) AS n FROM users')).toEqual({ n: 1 });
+  });
+
+  it('deletes the account with the right password and signs it out', async () => {
+    const cookie = cookieFrom(await signup());
+    const res = await del(cookie, { password: CREDS.password });
+    expect(res.statusCode).toBe(200);
+    expect(res.cookies.find((c) => c.name === 'lumina_session')?.value).toBe('');
+    expect(await database.get('SELECT COUNT(*) AS n FROM users')).toEqual({ n: 0 });
+  });
+});
+
 describe('password reset', () => {
   /** Pull the raw token out of the email the server just "sent". */
   function tokenFromEmail(): string {
