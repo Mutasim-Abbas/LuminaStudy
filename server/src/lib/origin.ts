@@ -14,9 +14,16 @@ import { env } from '../env.js';
 
 const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-/** The app's own origins: the frontend in development and where the app is served. */
+/**
+ * The app's own origins: the frontend in development, where the app is
+ * served, and — on Vercel — this deployment's own preview addresses.
+ */
 function trustedOrigins(): Set<string> {
-  return new Set([new URL(env.CORS_ORIGIN).origin, new URL(env.APP_URL).origin]);
+  return new Set([
+    new URL(env.CORS_ORIGIN).origin,
+    new URL(env.APP_URL).origin,
+    ...env.deploymentOrigins.map((url) => new URL(url).origin),
+  ]);
 }
 
 export function isCrossSiteWrite(request: FastifyRequest, trusted = trustedOrigins()): boolean {

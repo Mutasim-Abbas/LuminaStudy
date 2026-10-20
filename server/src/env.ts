@@ -45,6 +45,8 @@ const schema = z.object({
   APP_URL: z.string().url().optional(),
   // Set by Vercel itself on every deployment: bare hostnames, no https://.
   VERCEL_PROJECT_PRODUCTION_URL: z.string().optional(),
+  VERCEL_URL: z.string().optional(),
+  VERCEL_BRANCH_URL: z.string().optional(),
   // --- Sign in with Google (optional) ---
   // An OAuth client of type "Web application" from Google Cloud. Without both,
   // the Google button is simply not offered.
@@ -137,6 +139,14 @@ export const env = {
   ...raw,
   APP_URL: appUrl,
   CORS_ORIGIN: corsOrigin,
+  /**
+   * This deployment's own addresses besides the production one: its unique
+   * URL and its branch URL on Vercel. A preview deployment is served from
+   * these, so writes from them are not cross-site. Empty off Vercel.
+   */
+  deploymentOrigins: [raw.VERCEL_URL, raw.VERCEL_BRANCH_URL]
+    .map(vercelOrigin)
+    .filter((origin): origin is string => origin !== undefined),
   OPENAI_COMPAT_API_KEY: compatKey,
   JWT_SECRET: jwtSecret,
   trustProxy,
