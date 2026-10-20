@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { env } from '../env.js';
-import { db, type UserRow } from '../db.js';
+import { database, type UserRow } from '../db.js';
 import {
   clearLoginFailures,
   formatWait,
@@ -130,7 +130,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     const { email, password, name } = parsed.data;
 
-    const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+    const existing = await database.get('SELECT id FROM users WHERE email = ?', email);
     if (existing) {
       return reply
         .code(409)
@@ -138,9 +138,14 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const user = { id: randomUUID(), email, name };
-    db.prepare(
+    await database.run(
       'INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)',
-    ).run(user.id, user.email, user.name, await hashPassword(password), Date.now());
+      user.id,
+      user.email,
+      user.name,
+      await hashPassword(password),
+      Date.now(),
+    );
 
     setSessionCookie(reply, signSession(user));
     return reply.code(201).send({ user: publicUser(user) });
@@ -167,7 +172,7 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    const row = db.prepare('SELECT * FROM users WHERE email = ?').get(email) as UserRow | undefined;
+    const row = await database.get<UserRow>('SELECT * FROM users WHERE email = ?', email);
 
     // Hash even when the user is unknown, so response time doesn't reveal it.
     // Accounts made through Google have no password (an empty hash); they get
@@ -208,14 +213,14 @@ export async function authRoutes(app: FastifyInstance) {
     // answer reflects changes since sign-in — such as linking Google — and a
     // deleted account stops looking signed in.
     const row = session
-      ? (db.prepare('SELECT * FROM users WHERE id = ?').get(session.id) as UserRow | undefined)
+      ? await database.get<UserRow>('SELECT * FROM users WHERE id = ?', session.id)
       : undefined;
     return reply.send({ user: row ? publicUser(row) : null });
   });
 
   /** Deletes the account and, by cascade, everything it owns. */
   app.delete('/api/auth/me', { preHandler: requireAuth }, async (request, reply) => {
-    db.prepare('DELETE FROM users WHERE id = ?').run(request.user!.id);
+    await database.run('DELETE FROM users WHERE id = ?', request.user!.id);
     clearSessionCookie(reply);
     return reply.send({ ok: true });
   });
@@ -258,9 +263,10 @@ export async function authRoutes(app: FastifyInstance) {
 
       const { email } = parsed.data;
       const now = Date.now();
-      const row = db.prepare('SELECT id, email FROM users WHERE email = ?').get(email) as
-        | Pick<UserRow, 'id' | 'email'>
-        | undefined;
+      const row = await database.get<Pick<UserRow, 'id' | 'email'>>(
+        'SELECT id, email FROM users WHERE email = ?',
+        email,
+      );
 
       if (row) {
         const token = await createResetToken(row.id, now);
@@ -325,7 +331,7 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      const row = db.prepare('SELECT * FROM users WHERE id = ?').get(userId) as UserRow | undefined;
+      const row = await database.get<UserRow>('SELECT * FROM users WHERE id = ?', userId);
       if (!row) {
         return reply.code(400).send({
           error: 'invalid_token',
@@ -333,7 +339,8 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(
+      await database.run(
+        'UPDATE users SET password_hash = ? WHERE id = ?',
         await hashPassword(parsed.data.password),
         userId,
       );
