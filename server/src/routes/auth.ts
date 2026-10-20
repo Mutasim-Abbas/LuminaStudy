@@ -94,7 +94,7 @@ export async function authRoutes(app: FastifyInstance) {
     '/api/auth/captcha',
     { config: { rateLimit: { max: env.NODE_ENV === 'test' ? 100_000 : 30, timeWindow: '1 minute' } } },
     async (_request, reply) => {
-      const { token, svg } = createCaptcha(Date.now());
+      const { token, svg } = await createCaptcha(Date.now());
       return reply.send({ token, svg });
     },
   );
@@ -121,7 +121,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     // The real gate. Wrong or expired answer -> the client must fetch a new
     // image, since the token is consumed on this check either way.
-    if (!verifyCaptcha(parsed.data.captchaToken, parsed.data.captcha, now)) {
+    if (!(await verifyCaptcha(parsed.data.captchaToken, parsed.data.captcha, now))) {
       return reply.code(400).send({
         error: 'captcha_failed',
         message: 'The verification code was incorrect. Please try the new image.',
