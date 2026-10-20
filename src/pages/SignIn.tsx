@@ -10,6 +10,7 @@ import {
   requestPasswordReset,
   type Captcha,
 } from '../lib/api';
+import { DeleteAccount } from '../components/DeleteAccount';
 import { GoogleButton } from '../components/GoogleButton';
 import { LuminaMark } from '../components/LuminaMark';
 import { SyncIcon } from '../components/icons';
@@ -28,6 +29,7 @@ const GOOGLE_PROBLEMS: Record<string, string> = {
     'This email already has a Lumina account. Sign in with your password, then connect Google from your account page.',
   already_linked: 'That Google account is already connected to a different Lumina account.',
   signed_out: 'Sign in first, then connect Google from your account page.',
+  wrong_account: 'That isn’t the Google account connected to this Lumina account.',
   unavailable: 'Google sign-in isn’t available right now.',
 };
 
@@ -41,7 +43,7 @@ const GOOGLE_PROBLEMS: Record<string, string> = {
  * A hidden honeypot field sits behind it as a second, free signal.
  */
 export default function SignIn() {
-  const { user, guest, signIn, signUp, signOut, busy } = useAuth();
+  const { user, guest, signIn, signUp, signOut, signOutEverywhere, deleteAccount, busy } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -227,6 +229,15 @@ export default function SignIn() {
               Sign out
             </button>
           </div>
+          {/* For a lost phone or a shared computer: ends every session, everywhere. */}
+          <button
+            type="button"
+            onClick={() => signOutEverywhere()}
+            disabled={busy}
+            className="mt-4 font-label-sm text-label-sm text-on-surface-variant underline-offset-4 hover:text-primary hover:underline"
+          >
+            Sign out of all devices
+          </button>
           {googleSignIn &&
             (user.google ? (
               <p className="mt-8 font-label-sm text-label-sm text-on-surface-variant">
@@ -240,6 +251,15 @@ export default function SignIn() {
                 <GoogleButton href={GOOGLE_LINK_URL} />
               </div>
             ))}
+          <DeleteAccount
+            hasPassword={user.password}
+            googleConfirmed={googleReason === 'confirmed'}
+            busy={busy}
+            onDelete={async (password) => {
+              await deleteAccount(password);
+              navigate('/account?deleted=1', { replace: true });
+            }}
+          />
         </div>
       </div>
     );
@@ -265,6 +285,12 @@ export default function SignIn() {
 
         {/* Reset requested: a receipt, not a form. Worded so it says nothing
             about whether that address actually has an account. */}
+        {searchParams.get('deleted') === '1' && (
+          <p className="rise-in mt-6 rounded-lg bg-surface-container px-4 py-3 text-center font-body text-body-md text-on-surface">
+            Your account and its study sets have been deleted.
+          </p>
+        )}
+
         {isForgot && resetSent ? (
           <div className="mt-8 flex flex-col gap-4 text-center">
             <p className="rise-in rounded-lg bg-surface-container px-4 py-4 font-body text-body-md text-on-surface">

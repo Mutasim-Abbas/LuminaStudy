@@ -28,6 +28,24 @@ starts. The open items are listed honestly in §4.
 | Logs | Request logs record the path only, no query string | Google's one-time authorization code arrives in the callback's query string |
 | Local secrets | `server/.env` readable by the owner only (`chmod 600`) | Other accounts on the machine could read it |
 
+### Second round, after an outside review
+
+An outside review of this report (written without access to the code) raised
+the gaps below. Each was checked against the code; the ones that held up were
+fixed, with tests that fail on the old code.
+
+| Area | Change | Why |
+| --- | --- | --- |
+| Sessions | Server-side session records; the cookie's JWT names one, and every request checks it still exists | A password reset or sign-out couldn't end a stolen session, and a deleted account's cookie still worked on protected routes for up to 7 days |
+| Sign-out | Ends this browser's session on the server; "sign out of all devices" ends them everywhere | Clearing the cookie left any copy of it working |
+| Password reset | Ends every session in the same transaction as the new password | A reset is often the response to a stolen login |
+| Account deletion | Needs the password again, or a Google confirmation within five minutes | Anyone at an unlocked, signed-in browser could delete the account |
+| AI quota | A slot is reserved atomically before the AI call and returned if it fails | Checking first and recording after let five simultaneous requests all through a limit of three (found by the review) |
+| Tokens | The JWT carries only the account and session ids | A JWT is signed, not encrypted: the email and name were readable by whoever held it |
+| Cross-site requests | State-changing API requests from another site's Origin, or marked cross-site, are refused | A second CSRF defence that doesn't rely on SameSite cookies |
+| Reset links | The token is removed from the address bar once read | So it doesn't linger in history, bookmarks or screenshots |
+| CI | gitleaks scans every commit on every push; Dependabot proposes updates weekly | A clean audit is only true on the day it ran |
+
 ## 2. Controls in place
 
 ### 2.1 Secrets and configuration
@@ -47,10 +65,17 @@ starts. The open items are listed honestly in §4.
 
 - Passwords: scrypt with a per-user salt, constant-time comparison, 8–200
   characters. Never stored or returned in plain text.
-- Sessions: HS256 JWT with the algorithm pinned (no `alg: none` or algorithm
-  confusion), 7-day expiry, in an `httpOnly`, `SameSite=Lax` cookie that is
-  `Secure` in production. `/api/auth/me` reads the account from the database,
-  so a deleted account stops looking signed in.
+- Sessions: a server-side session record (only a SHA-256 hash of its id is
+  stored), named by an HS256 JWT with the algorithm pinned (no `alg: none` or
+  algorithm confusion) that carries only the account and session ids. 7-day
+  expiry, in an `httpOnly`, `SameSite=Lax` cookie that is `Secure` in
+  production. Every authenticated request checks that the session still
+  exists and its account too, so sessions end immediately on sign-out, on
+  "sign out of all devices", on a password reset (all of them, in the same
+  transaction as the new password) and on account deletion.
+- Deleting the account needs the password again — counted towards the sign-in
+  lockout — or, for an account with no password, a Google confirmation by the
+  same Google account within the last five minutes.
 - Sign-up: server-drawn image CAPTCHA (answer held server-side, single-use,
   5-minute expiry) plus a hidden honeypot field.
 - Sign-in: 5 failures per email, then a 15-minute lockout that survives IP
@@ -94,7 +119,9 @@ starts. The open items are listed honestly in §4.
 
 Client IPs come only from trusted proxies: private address ranges by default in
 production, or `TRUST_PROXY=all` on Vercel, which overwrites `X-Forwarded-For`
-itself. A failed AI request doesn't spend the user's daily quota.
+itself. An AI generation reserves its slot in the daily quota atomically
+before calling the AI, so simultaneous requests can't all slip under the
+limit; a failed call gives the slot back.
 
 ### 2.5 Data access and integrity
 
@@ -114,7 +141,11 @@ itself. A failed AI request doesn't spend the user's daily quota.
 - AI provider failures show a plain sentence; the provider's message is logged.
 - Request logs record method, path, host and IP — no query strings, cookies or
   bodies.
-- Helmet sets hardened HTTP headers; CORS is locked to the app's own origin.
+- Helmet sets hardened HTTP headers (including `Referrer-Policy: no-referrer`);
+  CORS is locked to the app's own origin.
+- Cross-site request forgery: besides the SameSite cookie, every POST, PUT,
+  PATCH or DELETE to the API whose `Origin` names another site — or whose
+  `Sec-Fetch-Site` is `cross-site` — gets a 403 before any route runs.
 
 ### 2.7 Frontend
 
@@ -132,21 +163,31 @@ itself. A failed AI request doesn't spend the user's daily quota.
 - The Litestream binary in the Docker image is pinned by image digest, not
   just tag, since it reads every byte of user data.
 - CI runs with minimal permissions and uses no secrets.
+- CI scans every commit with gitleaks 8.30.1 (pinned by image digest); only
+  two exact test-only fake values are allowlisted (`.gitleaks.toml`). The
+  Pages deploy waits for the scan.
+- Dependabot proposes updates weekly for both npm packages, the workflow's
+  actions and the Docker images.
 - Node 24 pinned for Vercel and CI.
 
 ### 2.9 How it is tested
 
-- 151 server tests, run on both database backends: local SQLite and libSQL
-  (Turso's client). They cover token forgery (expired, unsigned, wrong
-  secret, `alg: none`), account isolation, lockout, quota, reset-token
-  replay, CAPTCHA races, Google token forgery (wrong key, wrong audience or
-  issuer, unsigned, HMAC confusion, expired, wrong nonce, unverified email),
-  login CSRF on the Google callback, and AI error leaks.
+- 179 server tests, run on both database backends: local SQLite and libSQL
+  (Turso's client), and 88 frontend tests. They cover token forgery (expired,
+  unsigned, wrong secret, `alg: none`), session revocation (sign-out, sign out
+  everywhere, password reset, deleted accounts), re-authentication before
+  deletion, account isolation, lockout, the AI quota under simultaneous
+  requests, reset-token replay, CAPTCHA races, cross-site writes, Google token
+  forgery (wrong key, wrong audience or issuer, unsigned, HMAC confusion,
+  expired, wrong nonce, unverified email), login CSRF on the Google callback,
+  and AI error leaks.
 - For key protections the tests were also run against deliberately broken
   code, to confirm they fail when the protection is missing: the proxy trust,
   the transaction queue on both backends, the atomic CAPTCHA check, explicit
-  account deletion and AI error hiding. This caught one test that wasn't
-  testing anything; it was rewritten.
+  account deletion, AI error hiding, session revocation on sign-out and
+  reset, the atomic AI quota (the old code let five of five simultaneous
+  requests through) and the reset-link clean-up. This caught one test that
+  wasn't testing anything; it was rewritten.
 
 ## 3. Leak audit (2026-10-20)
 
@@ -160,13 +201,61 @@ itself. A failed AI request doesn't spend the user's daily quota.
 
 ## 4. Known gaps
 
+Closed since the first version of this report: stateless sessions, deletion
+without re-authentication, the AI quota race, and the missing secret scan
+(see the second round in §1).
+
 | Gap | Risk | Plan |
 | --- | --- | --- |
-| Sessions are stateless: a password reset or sign-out doesn't end sessions on other devices | A stolen cookie works until it expires (up to 7 days) | Build step 3: a session version that a reset or "log out everywhere" bumps |
-| Deleting an account doesn't re-confirm the password | Anyone at an unlocked, signed-in browser can delete it | Build step 3, with a fresh Google sign-in for password-less accounts |
-| No Content-Security-Policy | A future XSS bug would have no second line of defence | Add a strict CSP once the frontend's needs are mapped |
+| No Content-Security-Policy | A future XSS bug would have no second line of defence; it could act as the user even though it can't read the cookie | Map the frontend's needs, ship a strict policy in report-only mode, then enforce it |
 | Per-IP limits are per instance on Vercel | Spread over many instances, the IP limits loosen; per-account limits (lockout, AI quota) are in the database and unaffected | Move the IP counters to a shared store if abuse appears |
 | Email addresses aren't verified at sign-up | Someone can register an address they don't own (Google linking is already protected against this) | Verification email once a sending domain is set up |
-| Dev tooling (vitest, vite, tailwind) has advisories that need major upgrades | Development only; nothing ships to users | Upgrade in a dedicated change |
-| Live services not yet exercised: a real Turso database, the Vercel deploy and Google sign-in | Configuration mistakes would show only after deploy | Run the checks in `DEPLOY.md` on first deploy |
-| No automated secret scanning in CI | A future commit could add a key unnoticed | Add a secret scanner (e.g. gitleaks) to CI |
+| The hosting platform keeps its own request logs | They may record full URLs, including Google's one-time callback code, which is useless without the PKCE verifier but still sensitive | Check what Vercel records on first deploy; restrict who can read the logs |
+| Dev tooling (vitest, vite, tailwind) has advisories that need major upgrades | Development only; nothing ships to users | Upgrade in a dedicated change, now proposed by Dependabot |
+| Live services not yet exercised: a real Turso database, the Vercel deploy, Google sign-in and the secret scan's first CI run | Configuration mistakes would show only after deploy | The deploy-day checklist in §5 |
+
+## 5. Deploy-day security checklist
+
+None of these can be proven before the app runs on the real services. Do
+them on the first deploy, and again after any change to the hosting setup.
+
+1. **Secrets live only in Vercel's environment variables**, scoped to
+   Production, and are different from any used locally. `JWT_SECRET` is newly
+   generated for production.
+2. **The build is clean:** the CI run for the deployed commit is green,
+   including the secret scan.
+3. **Headers, from outside:** `curl -I https://<app>/` shows Helmet's headers
+   and `Referrer-Policy: no-referrer`; the session cookie is `HttpOnly`,
+   `Secure` and `SameSite=Lax`.
+4. **Client IPs:** sign in with a wrong password from two networks (e.g. Wi-Fi
+   and a phone's data) and check that each network gets its own rate limit.
+5. **Sessions end:** sign in on two browsers; "sign out of all devices" on one
+   signs the other out on its next request. Repeat with a password reset.
+6. **Isolation:** with two accounts, one can't see or change the other's sets.
+7. **Deletion:** deleting an account asks for the password (or a Google
+   confirmation) and leaves nothing behind in Turso.
+8. **Cross-site writes:** a POST to `/api/auth/login` with
+   `Origin: https://example.com` gets a 403.
+9. **Google sign-in:** sign in, link, confirm and cancel all land where they
+   should; Vercel's request logs show what they record for the callback URL.
+10. **Nothing private is served:** `/.env`, `/server/.env` and `/data/` return
+    404.
+
+## 6. If something leaks
+
+Removing a secret from the code doesn't make it safe — anyone who copied it
+still has it. Rotate first, clean up second.
+
+| What leaked | Do this first | Then |
+| --- | --- | --- |
+| `JWT_SECRET` | Set a new one in Vercel and redeploy: every token signed with the old one stops verifying | Everyone signs in again; that's the point |
+| One account's session (a stolen cookie) | The owner signs out of all devices, or resets the password | Both end every session immediately |
+| `GROQ_API_KEY` | Revoke it in the Groq console and create a new one | Check Groq's usage page for spending you didn't make |
+| `RESEND_API_KEY` | Revoke it in Resend | Check the sending log for mail you didn't send |
+| `DATABASE_AUTH_TOKEN` | Revoke it in Turso and issue a new one | Assume the data was read; check Turso's activity |
+| `GOOGLE_CLIENT_SECRET` | Reset it in Google Cloud | Update Vercel and redeploy |
+| Backup keys (container setup) | Delete the key in Backblaze and make a new one | The backups themselves may have been read |
+
+Afterwards: find how it leaked, add a test or a scanner rule so it can't
+happen the same way again, and only then rewrite history if the secret was
+committed — rewriting doesn't un-leak it.

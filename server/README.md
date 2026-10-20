@@ -13,12 +13,13 @@ browser talks to `/api/*` and never to the provider directly.
 | `/api/auth/captcha`      | GET    | Fresh CAPTCHA image + single-use token          |
 | `/api/auth/signup`       | POST   | Create an account (name, email, password, CAPTCHA) |
 | `/api/auth/login`        | POST   | Sign in (5 attempts, then 15-minute lockout)    |
-| `/api/auth/logout`       | POST   | Clear the session cookie                        |
+| `/api/auth/logout`       | POST   | End this browser's session                      |
+| `/api/auth/logout-all`   | POST   | End every session of the account, everywhere    |
 | `/api/auth/me`           | GET    | Current session, or `null`                      |
-| `/api/auth/me`           | DELETE | Delete the account and everything it owns       |
+| `/api/auth/me`           | DELETE | Delete the account and everything it owns — needs `{ password }`, or a Google confirmation in the last 5 minutes |
 | `/api/auth/forgot`       | POST   | Request a reset link (same reply for any email) |
 | `/api/auth/reset`        | POST   | Redeem a reset token and set a new password     |
-| `/api/auth/google`       | GET    | Start Sign in with Google (`?link=1` connects it to the signed-in account) |
+| `/api/auth/google`       | GET    | Start Sign in with Google (`?link=1` connects it to the signed-in account; `?confirm=1` re-confirms it before deleting) |
 | `/api/auth/google/callback` | GET | Where Google returns; signs in, creates or links the account |
 
 **Study sets** (session required)
@@ -87,8 +88,16 @@ a restore drill are in [DEPLOY.md](../DEPLOY.md).
 - **Key isolation** — the provider key is read from `.env` (git-ignored) on the
   server only.
 - **Passwords** — scrypt with a per-user salt, constant-time verification.
-- **Sessions** — JWTs (pinned algorithm, 7-day expiry) in httpOnly,
-  SameSite=Lax cookies.
+- **Sessions** — server-side session records, named by a signed JWT (pinned
+  algorithm, 7-day expiry, account and session ids only) in an httpOnly,
+  SameSite=Lax cookie. Every request checks the session still exists, so
+  signing out, signing out everywhere, a password reset or deleting the account
+  ends sessions immediately.
+- **Destructive actions** — deleting the account needs the password again, or
+  a Google confirmation within the last five minutes.
+- **Cross-site requests** — state-changing API requests whose Origin or
+  Sec-Fetch-Site says they came from another site are refused, on top of the
+  SameSite cookie.
 - **Sign-up** — server-generated image CAPTCHA with single-use, server-held
   answers, plus a honeypot field.
 - **Sign-in** — per-account lockout after 5 failures; identical responses and

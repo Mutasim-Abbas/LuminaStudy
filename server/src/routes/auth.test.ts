@@ -21,7 +21,7 @@ beforeEach(async () => {
   // rows leak failure counts and quota between tests, which silently changes
   // what later assertions are actually measuring.
   await database.exec(
-    'DELETE FROM study_sets; DELETE FROM ai_usage; DELETE FROM login_attempts; DELETE FROM password_resets; DELETE FROM users;',
+    'DELETE FROM sessions; DELETE FROM study_sets; DELETE FROM ai_usage; DELETE FROM login_attempts; DELETE FROM password_resets; DELETE FROM users;',
   );
   if (!app) app = await buildApp();
 });
@@ -275,6 +275,13 @@ describe('session', () => {
     expect(res.json().user.email).toBe(CREDS.email);
   });
 
+  it('says whether the account has a password, never the hash', async () => {
+    const cookie = cookieFrom(await signup());
+    const res = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    expect(res.json().user.password).toBe(true);
+    expect(res.body).not.toContain('scrypt$');
+  });
+
   it('says whether Google is linked, from the account rather than the token', async () => {
     const cookie = cookieFrom(await signup());
     const me = () => app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
@@ -306,6 +313,56 @@ describe('session', () => {
     const res = await app.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie } });
     const cleared = res.cookies.find((c) => c.name === 'lumina_session');
     expect(cleared?.value).toBe('');
+  });
+
+  it('ends the session itself, so a copied cookie stops working after logout', async () => {
+    const cookie = cookieFrom(await signup());
+    await app.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie } });
+
+    // The same cookie replayed — say, copied off the machine earlier.
+    const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    expect(me.json().user).toBeNull();
+    const sets = await app.inject({ method: 'GET', url: '/api/sets', headers: { cookie } });
+    expect(sets.statusCode).toBe(401);
+  });
+
+  it('signs out only this device', async () => {
+    await signup();
+    const laptop = cookieFrom(
+      await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }),
+    );
+    const phone = cookieFrom(
+      await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }),
+    );
+    await app.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie: phone } });
+    const me = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: laptop },
+    });
+    expect(me.json().user.email).toBe(CREDS.email);
+  });
+
+  it('signs out every device with sign out everywhere', async () => {
+    const first = cookieFrom(await signup());
+    const second = cookieFrom(
+      await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }),
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/logout-all',
+      headers: { cookie: first },
+    });
+    expect(res.statusCode).toBe(200);
+    for (const cookie of [first, second]) {
+      const sets = await app.inject({ method: 'GET', url: '/api/sets', headers: { cookie } });
+      expect(sets.statusCode).toBe(401);
+    }
+  });
+
+  it('only lets a signed-in account sign out everywhere', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/auth/logout-all' });
+    expect(res.statusCode).toBe(401);
   });
 });
 
@@ -662,31 +719,153 @@ describe('per-user isolation', () => {
       headers: { cookie },
       payload: sampleSet(),
     });
-    await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
+    await app.inject({
+      method: 'DELETE',
+      url: '/api/auth/me',
+      headers: { cookie },
+      payload: { password: CREDS.password },
+    });
     const rows = (await database.get<{ n: number }>('SELECT COUNT(*) AS n FROM study_sets'))!;
     expect(rows.n).toBe(0);
+  });
+
+  it("stops a deleted account's cookie from reading or writing anything", async () => {
+    const cookie = cookieFrom(await signup());
+    await app.inject({
+      method: 'DELETE',
+      url: '/api/auth/me',
+      headers: { cookie },
+      payload: { password: CREDS.password },
+    });
+
+    const read = await app.inject({ method: 'GET', url: '/api/sets', headers: { cookie } });
+    expect(read.statusCode).toBe(401);
+    // Without the session check this would write an orphaned set on Turso,
+    // where foreign keys are off.
+    const write = await app.inject({
+      method: 'PUT',
+      url: '/api/sets/s1',
+      headers: { cookie },
+      payload: sampleSet(),
+    });
+    expect(write.statusCode).toBe(401);
+    expect(await database.get('SELECT COUNT(*) AS n FROM study_sets')).toEqual({ n: 0 });
   });
 
   it('removes everything the account owns even with foreign keys off, as on Turso', async () => {
     await database.exec('PRAGMA foreign_keys = OFF');
     try {
       const cookie = cookieFrom(await signup());
-      await app.inject({ method: 'PUT', url: '/api/sets/s1', headers: { cookie }, payload: sampleSet() });
-      await app.inject({ method: 'POST', url: '/api/auth/forgot', payload: { email: CREDS.email } });
+      await app.inject({
+        method: 'PUT',
+        url: '/api/sets/s1',
+        headers: { cookie },
+        payload: sampleSet(),
+      });
+      await app.inject({
+        method: 'POST',
+        url: '/api/auth/forgot',
+        payload: { email: CREDS.email },
+      });
       await app.inject({
         method: 'POST',
         url: '/api/auth/login',
         payload: { ...CREDS, password: 'wrong password' },
       });
 
-      const del = await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
+      const del = await app.inject({
+        method: 'DELETE',
+        url: '/api/auth/me',
+        headers: { cookie },
+        payload: { password: CREDS.password },
+      });
       expect(del.statusCode).toBe(200);
-      for (const table of ['users', 'study_sets', 'ai_usage', 'password_resets', 'login_attempts']) {
+      for (const table of [
+        'users',
+        'study_sets',
+        'ai_usage',
+        'password_resets',
+        'login_attempts',
+        'sessions',
+      ]) {
         expect(await database.get(`SELECT COUNT(*) AS n FROM ${table}`), table).toEqual({ n: 0 });
       }
     } finally {
       await database.exec('PRAGMA foreign_keys = ON');
     }
+  });
+});
+
+describe('deleting an account', () => {
+  const del = (cookie: string, payload?: object) =>
+    app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie }, payload });
+
+  it('needs the password, not just a signed-in browser', async () => {
+    const cookie = cookieFrom(await signup());
+    const res = await del(cookie);
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('reauth_required');
+    expect(await database.get('SELECT COUNT(*) AS n FROM users')).toEqual({ n: 1 });
+  });
+
+  it('refuses a wrong password and counts it towards the lockout', async () => {
+    const cookie = cookieFrom(await signup());
+    const res = await del(cookie, { password: 'not my password' });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('reauth_failed');
+    expect(await database.get('SELECT COUNT(*) AS n FROM login_attempts')).toEqual({ n: 1 });
+    expect(await database.get('SELECT COUNT(*) AS n FROM users')).toEqual({ n: 1 });
+  });
+
+  it('stops accepting passwords once locked out', async () => {
+    const cookie = cookieFrom(await signup());
+    for (let i = 0; i < 5; i++) await del(cookie, { password: `guess number ${i}` });
+    const res = await del(cookie, { password: CREDS.password });
+    expect(res.statusCode).toBe(429);
+    expect(await database.get('SELECT COUNT(*) AS n FROM users')).toEqual({ n: 1 });
+  });
+
+  it('deletes the account with the right password and signs it out', async () => {
+    const cookie = cookieFrom(await signup());
+    const res = await del(cookie, { password: CREDS.password });
+    expect(res.statusCode).toBe(200);
+    expect(res.cookies.find((c) => c.name === 'lumina_session')?.value).toBe('');
+    expect(await database.get('SELECT COUNT(*) AS n FROM users')).toEqual({ n: 0 });
+  });
+});
+
+describe('cross-site requests', () => {
+  const login = (headers: Record<string, string>) =>
+    app.inject({ method: 'POST', url: '/api/auth/login', headers, payload: CREDS });
+
+  it('refuses a write whose Origin is another site', async () => {
+    const res = await login({ origin: 'https://evil.example' });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('cross_site_request');
+  });
+
+  it('refuses a write the browser marks as cross-site', async () => {
+    expect((await login({ 'sec-fetch-site': 'cross-site' })).statusCode).toBe(403);
+  });
+
+  it('refuses a sandboxed page, whose Origin is "null"', async () => {
+    expect((await login({ origin: 'null' })).statusCode).toBe(403);
+  });
+
+  it('accepts the app\'s own origin and clients that send none', async () => {
+    await signup();
+    expect((await login({ origin: 'http://localhost:5174' })).statusCode).toBe(200);
+    expect((await login({ 'sec-fetch-site': 'same-origin' })).statusCode).toBe(200);
+    expect((await login({})).statusCode).toBe(200);
+  });
+
+  it('leaves reads alone', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { origin: 'https://evil.example' },
+    });
+    expect(res.statusCode).toBe(200);
   });
 });
 
@@ -759,6 +938,26 @@ describe('password reset', () => {
       payload: CREDS,
     });
     expect(login.statusCode).toBe(401);
+  });
+
+  it('signs out every existing session, so a stolen cookie dies with the old password', async () => {
+    const stolen = cookieFrom(await signup());
+    await requestReset();
+    const reset = await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token: tokenFromEmail(), password: 'a brand new password' },
+    });
+    expect(reset.statusCode).toBe(200);
+
+    for (const url of ['/api/sets', '/api/generate/quota']) {
+      const res = await app.inject({ method: 'GET', url, headers: { cookie: stolen } });
+      expect(res.statusCode, url).toBe(401);
+    }
+    // The browser that did the reset is signed in with a fresh session.
+    const fresh = cookieFrom(reset);
+    const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: fresh } });
+    expect(me.json().user.email).toBe(CREDS.email);
   });
 
   it('rejects a token that has already been used', async () => {

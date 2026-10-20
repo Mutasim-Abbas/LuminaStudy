@@ -122,4 +122,26 @@ export const MIGRATIONS: Migration[] = [
         CREATE INDEX idx_captcha_challenges_expiry ON captcha_challenges(expires_at);
       `),
   },
+  {
+    version: 5,
+    name: 'sessions',
+    up: (tx) =>
+      // Server-side sessions, so a session can be ended before its cookie
+      // expires: on sign-out, on "sign out everywhere", on a password reset,
+      // or when the account is deleted. The cookie names its session; only a
+      // SHA-256 hash of that id is stored, like reset tokens. reauthenticated_at
+      // records a fresh password or Google check, which destructive actions
+      // such as deleting the account require.
+      tx.exec(`
+        CREATE TABLE sessions (
+          id_hash            TEXT PRIMARY KEY,
+          user_id            TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          created_at         INTEGER NOT NULL,
+          expires_at         INTEGER NOT NULL,
+          reauthenticated_at INTEGER
+        );
+        CREATE INDEX idx_sessions_user ON sessions(user_id);
+        CREATE INDEX idx_sessions_expiry ON sessions(expires_at);
+      `),
+  },
 ];

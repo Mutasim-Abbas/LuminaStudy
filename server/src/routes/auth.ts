@@ -22,11 +22,18 @@ import {
 } from '../lib/passwordReset.js';
 import {
   clearSessionCookie,
-  currentUser,
+  currentSession,
   requireAuth,
-  setSessionCookie,
-  signSession,
+  SESSION_COOKIE,
+  startSession,
+  verifySession,
 } from '../lib/auth.js';
+import {
+  endAllSessions,
+  endSession,
+  pruneSessions,
+  recentlyReauthenticated,
+} from '../lib/sessions.js';
 
 /**
  * Email/password accounts.
@@ -68,8 +75,18 @@ const signupBody = credentials.extend({
 });
 
 /** Never let a password hash leave the server. */
-function publicUser(row: Pick<UserRow, 'id' | 'email' | 'name'> & { google_sub?: string | null }) {
-  return { id: row.id, email: row.email, name: row.name, google: Boolean(row.google_sub) };
+function publicUser(
+  row: Pick<UserRow, 'id' | 'email' | 'name'> & { google_sub?: string | null; password_hash?: string },
+) {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    google: Boolean(row.google_sub),
+    // Whether the account can confirm actions with a password, or only with
+    // Google. Never the hash itself.
+    password: Boolean(row.password_hash),
+  };
 }
 
 /**
@@ -147,7 +164,7 @@ export async function authRoutes(app: FastifyInstance) {
       Date.now(),
     );
 
-    setSessionCookie(reply, signSession(user));
+    await startSession(reply, user.id, Date.now());
     return reply.code(201).send({ user: publicUser(user) });
   });
 
@@ -195,27 +212,41 @@ export async function authRoutes(app: FastifyInstance) {
 
     await clearLoginFailures(email);
     await pruneLoginAttempts(now);
+    await pruneSessions(now);
 
-    const user = { id: row.id, email: row.email, name: row.name ?? '' };
-    setSessionCookie(reply, signSession(user));
+    await startSession(reply, row.id, now);
     return reply.send({ user: publicUser(row) });
   });
 
-  app.post('/api/auth/logout', async (_request, reply) => {
+  /**
+   * Ends this browser's session on the server, not just its cookie: a copy of
+   * the cookie taken earlier stops working too.
+   */
+  app.post('/api/auth/logout', async (request, reply) => {
+    const token = verifySession(request.cookies?.[SESSION_COOKIE]);
+    if (token) await endSession(token.sessionId);
+    clearSessionCookie(reply);
+    return reply.send({ ok: true });
+  });
+
+  /**
+   * Sign out everywhere: ends every session of the account, this one
+   * included. For a lost phone, a shared computer, or a suspicion that someone
+   * else is signed in.
+   */
+  app.post('/api/auth/logout-all', { preHandler: requireAuth }, async (request, reply) => {
+    await endAllSessions(request.user!.id);
     clearSessionCookie(reply);
     return reply.send({ ok: true });
   });
 
   /** Who am I? Returns null rather than 401 so the client can boot either way. */
   app.get('/api/auth/me', async (request, reply) => {
-    const session = currentUser(request);
-    // Read the account itself rather than echoing the token's claims, so the
-    // answer reflects changes since sign-in — such as linking Google — and a
-    // deleted account stops looking signed in.
-    const row = session
-      ? await database.get<UserRow>('SELECT * FROM users WHERE id = ?', session.id)
-      : undefined;
-    return reply.send({ user: row ? publicUser(row) : null });
+    // The account as stored now, so the answer reflects changes since sign-in
+    // (such as linking Google), and an ended session or deleted account stops
+    // looking signed in.
+    const current = await currentSession(request);
+    return reply.send({ user: current ? publicUser(current.user) : null });
   });
 
   /**
@@ -227,8 +258,48 @@ export async function authRoutes(app: FastifyInstance) {
    */
   app.delete('/api/auth/me', { preHandler: requireAuth }, async (request, reply) => {
     const { id, email } = request.user!;
+
+    // Irreversible, so a signed-in browser alone isn't enough: whoever is at
+    // the keyboard has to prove they own the account again — with the
+    // password, or by confirming with Google in the last few minutes (the only
+    // way for an account that has no password). The password counts towards
+    // the same lockout as sign-in, so this can't be used to guess it.
+    const now = Date.now();
+    const current = await currentSession(request);
+    const confirmedWithGoogle = current ? recentlyReauthenticated(current.session, now) : false;
+
+    if (!confirmedWithGoogle) {
+      const body = z
+        .object({ password: z.string().max(200).optional() })
+        .safeParse(request.body ?? {});
+      const password = body.success ? body.data.password : undefined;
+      const account = current?.user;
+      if (!account?.password_hash) {
+        return reply.code(403).send({
+          error: 'reauth_required',
+          message: 'Confirm with Google to delete your account.',
+        });
+      }
+      if (!password) {
+        return reply
+          .code(403)
+          .send({ error: 'reauth_required', message: 'Enter your password to delete your account.' });
+      }
+      const lock = await loginLockout(email, now);
+      if (lock.locked) {
+        return reply.code(429).send({
+          error: 'too_many_attempts',
+          message: `Too many attempts. Try again in ${formatWait(lock.retryAtMs!, now)}.`,
+        });
+      }
+      if (!(await verifyPassword(password, account.password_hash))) {
+        await recordLoginFailure(email, now);
+        return reply.code(403).send({ error: 'reauth_failed', message: 'That password is incorrect.' });
+      }
+    }
+
     await database.transaction(async (tx) => {
-      for (const table of ['study_sets', 'ai_usage', 'password_resets']) {
+      for (const table of ['study_sets', 'ai_usage', 'password_resets', 'sessions']) {
         await tx.run(`DELETE FROM ${table} WHERE user_id = ?`, id);
       }
       await tx.run('DELETE FROM login_attempts WHERE email = ?', email);
@@ -352,12 +423,15 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      await database.run(
-        'UPDATE users SET password_hash = ? WHERE id = ?',
-        await hashPassword(parsed.data.password),
-        userId,
-      );
-      await consumeResetToken(parsed.data.token, now);
+      const passwordHash = await hashPassword(parsed.data.password);
+      // One transaction: the new password, the spent link, and the end of every
+      // existing session. A reset is often a response to a stolen login, and a
+      // stolen cookie must stop working the moment the password changes.
+      await database.transaction(async (tx) => {
+        await tx.run('UPDATE users SET password_hash = ? WHERE id = ?', passwordHash, userId);
+        await consumeResetToken(parsed.data.token, now, tx);
+        await endAllSessions(userId, tx);
+      });
 
       // Someone who just proved control of the inbox shouldn't still be serving
       // out a lockout earned by forgetting the old password.
@@ -366,8 +440,7 @@ export async function authRoutes(app: FastifyInstance) {
       // Sign them straight in: they've demonstrated ownership, and bouncing
       // them to a login form to retype the password they just chose is friction
       // for no security gain.
-      const user = { id: row.id, email: row.email, name: row.name ?? '' };
-      setSessionCookie(reply, signSession(user));
+      await startSession(reply, row.id, now);
       return reply.send({ user: publicUser(row) });
     },
   );

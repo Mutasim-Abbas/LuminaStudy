@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError, resetPassword } from '../lib/api';
 import { LuminaMark } from '../components/LuminaMark';
@@ -12,13 +12,18 @@ import { LuminaMark } from '../components/LuminaMark';
  */
 export default function ResetPassword() {
   const [params] = useSearchParams();
-  const token = params.get('token') ?? '';
+  // Kept in state, then taken out of the address bar: a live reset token
+  // shouldn't sit in the browser history, a bookmark or a screenshot.
+  const [token] = useState(() => params.get('token') ?? '');
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (params.has('token')) navigate('/reset', { replace: true });
+  }, [params, navigate]);
 
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const navigate = useNavigate();
 
   const inputClass =
     'w-full rounded-lg border border-surface-variant bg-surface-container-lowest px-3 py-2.5 font-body text-body-md text-on-surface transition-shadow focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20';

@@ -1,0 +1,17 @@
+# Secret scanning. CI runs gitleaks over every commit on every push; this file
+# keeps gitleaks' default rules and adds an allowlist for values that are fake
+# by design. Each entry is an exact string, not a pattern for a whole file, so a
+# real key added next to one of them is still caught.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fake credentials that exist only in tests and test configuration"
+regexTarget = "line"
+regexes = [
+  # JWT secret the server test suite runs with (server/vitest.config.ts).
+  '''test-only-secret-not-used-anywhere-near-production''',
+  # Stand-in Groq key for the AI error tests (server/src/routes/generate.test.ts).
+  '''gsk_test_key_not_a_real_one''',
+]

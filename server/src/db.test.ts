@@ -93,6 +93,7 @@ describe('openDatabase', () => {
       'captcha_challenges',
       'login_attempts',
       'password_resets',
+      'sessions',
       'study_sets',
       'users',
     ]);

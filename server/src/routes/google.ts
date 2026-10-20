@@ -2,7 +2,8 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { database, type UserRow } from '../db.js';
 import { env } from '../env.js';
-import { currentUser, setSessionCookie, signSession } from '../lib/auth.js';
+import { currentSession, startSession } from '../lib/auth.js';
+import { markReauthenticated } from '../lib/sessions.js';
 import {
   createAuthRequest,
   exchangeCode,
@@ -31,6 +32,8 @@ export interface Flow {
   codeVerifier: string;
   /** Set when a signed-in user is connecting Google to their account. */
   linkUserId?: string;
+  /** Set when a signed-in user is re-confirming who they are, e.g. before deleting the account. */
+  confirmUserId?: string;
 }
 
 /** A page of our own app. Never a URL taken from the request. */
@@ -62,8 +65,8 @@ function sameString(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-function signInAndGo(reply: FastifyReply, row: UserRow) {
-  setSessionCookie(reply, signSession({ id: row.id, email: row.email, name: row.name }));
+async function signInAndGo(reply: FastifyReply, row: UserRow) {
+  await startSession(reply, row.id, Date.now());
   return reply.redirect(appUrl('/'));
 }
 
@@ -79,10 +82,14 @@ export async function googleRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: 'not_configured', message: 'Google sign-in is off.' });
     }
 
-    // ?link=1 connects Google to the account that is signed in right now.
-    const linking = (request.query as { link?: string }).link === '1';
-    const session = currentUser(request);
-    if (linking && !session) return fail(reply, 'signed_out');
+    // ?link=1 connects Google to the account that is signed in right now;
+    // ?confirm=1 re-checks that the signed-in person controls its Google
+    // account, for actions that need a fresh check (deleting the account).
+    const query = request.query as { link?: string; confirm?: string };
+    const linking = query.link === '1';
+    const confirming = !linking && query.confirm === '1';
+    const session = (await currentSession(request))?.user;
+    if ((linking || confirming) && !session) return fail(reply, 'signed_out');
 
     const auth = createAuthRequest(env.GOOGLE_CLIENT_ID!, env.googleRedirectUri);
     const flow: Flow = {
@@ -90,6 +97,7 @@ export async function googleRoutes(app: FastifyInstance) {
       nonce: auth.nonce,
       codeVerifier: auth.codeVerifier,
       ...(linking && session ? { linkUserId: session.id } : {}),
+      ...(confirming && session ? { confirmUserId: session.id } : {}),
     };
     reply.setCookie(FLOW_COOKIE, JSON.stringify(flow), {
       signed: true,
@@ -134,10 +142,20 @@ export async function googleRoutes(app: FastifyInstance) {
       return fail(reply, err.reason === 'email_unverified' ? 'email_unverified' : 'failed');
     }
 
+    if (flow.confirmUserId) {
+      // Must be the same signed-in session's account, and the same Google
+      // account it is linked to — not just any Google account.
+      const current = await currentSession(request);
+      if (!current || current.user.id !== flow.confirmUserId) return fail(reply, 'signed_out');
+      if (current.user.google_sub !== identity.sub) return fail(reply, 'wrong_account');
+      await markReauthenticated(current.sessionId, Date.now());
+      return reply.redirect(appUrl('/account?google=confirmed'));
+    }
+
     if (flow.linkUserId) {
       // Connecting Google to the signed-in account. The session must still be
       // the one that started this: someone else may have signed in since.
-      const session = currentUser(request);
+      const session = (await currentSession(request))?.user;
       if (!session || session.id !== flow.linkUserId) return fail(reply, 'signed_out');
       // One Google account signs into one Lumina account, never two.
       const owner = await database.get<{ id: string }>(

@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { database } from '../db.js';
+import type { Database } from './database.js';
 
 /**
  * Password-reset tokens.
@@ -67,8 +68,12 @@ export async function resolveResetToken(token: string, nowMs: number): Promise<s
 }
 
 /** Mark a token spent. Called only once the new password is actually stored. */
-export async function consumeResetToken(token: string, nowMs: number): Promise<void> {
-  await database.run(
+export async function consumeResetToken(
+  token: string,
+  nowMs: number,
+  db: Database = database,
+): Promise<void> {
+  await db.run(
     'UPDATE password_resets SET used_at = ? WHERE token_hash = ? AND used_at IS NULL',
     nowMs,
     hashToken(token),

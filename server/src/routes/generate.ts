@@ -2,7 +2,13 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { generateStudySet, GeminiError } from '../services/gemini.js';
 import { requireAuth } from '../lib/auth.js';
-import { AI_FREE_PER_DAY, aiQuota, formatWait, recordAiUse } from '../lib/limits.js';
+import {
+  AI_FREE_PER_DAY,
+  aiQuota,
+  formatWait,
+  releaseAiUse,
+  reserveAiUse,
+} from '../lib/limits.js';
 
 const bodySchema = z.object({
   // Cap length: protects cost and blocks abuse. ~40k chars ≈ a long lecture.
@@ -47,8 +53,11 @@ export async function generateRoutes(app: FastifyInstance) {
 
       const userId = request.user!.id;
       const now = Date.now();
-      const quota = await aiQuota(userId, now);
-      if (quota.remaining <= 0) {
+      // Claim the slot before the slow AI call, atomically, so requests sent
+      // at once can't all slip under the limit.
+      const reservation = await reserveAiUse(userId, now);
+      if (!reservation) {
+        const quota = await aiQuota(userId, now);
         // 402 rather than 429: this isn't "slow down", it's "the free tier is
         // spent". The client uses this to show the upgrade prompt.
         return reply.code(402).send({
@@ -62,12 +71,12 @@ export async function generateRoutes(app: FastifyInstance) {
 
       try {
         const set = await generateStudySet(parsed.data);
-        // Only count a generation that actually produced something — a failed
-        // upstream call shouldn't burn one of the user's three.
-        await recordAiUse(userId, now);
         const after = await aiQuota(userId, Date.now());
         return reply.send({ set, quota: { used: after.used, limit: after.limit, remaining: after.remaining } });
       } catch (err) {
+        // Only a generation that produced something counts: a failed upstream
+        // call gives the reserved slot back.
+        await releaseAiUse(reservation);
         if (err instanceof GeminiError) {
           if (err.detail) request.log.warn({ status: err.status, detail: err.detail }, 'AI request failed');
           return reply.code(err.status).send({ error: 'ai_error', message: err.message });

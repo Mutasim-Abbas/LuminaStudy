@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  deleteAccount as apiDeleteAccount,
   fetchCloudSets,
   fetchSession,
   signIn as apiSignIn,
   signOut as apiSignOut,
+  signOutEverywhere as apiSignOutEverywhere,
   signUp as apiSignUp,
   syncCloudSets,
   type AccountUser,
@@ -34,6 +36,10 @@ interface AuthValue {
   signUp: (input: SignUpInput) => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
+  /** Ends every session of the account, on every device. */
+  signOutEverywhere: () => Promise<void>;
+  /** Deletes the account for good. Pass the password, or none after confirming with Google. */
+  deleteAccount: (password?: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthValue | null>(null);
@@ -44,6 +50,23 @@ function readLocalSets(): StudySet[] {
     return raw ? (JSON.parse(raw) as StudySet[]) : [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * Wipe the local cache once an account has left this browser. Whatever is on
+ * screen belongs to that account — and on a shared or library computer the
+ * next person to sign in would otherwise inherit it *and* push it into their
+ * own account on reconcile. The data is safe on the server (or deliberately
+ * gone); this copy is only a cache.
+ */
+function forgetLocalData() {
+  for (const key of [STUDY_SETS_KEY, 'lumina.srs', 'lumina.activity', 'lumina.userName']) {
+    try {
+      localStorage.removeItem(key);
+    } catch {
+      /* storage unavailable — nothing cached to forget */
+    }
   }
 }
 
@@ -145,25 +168,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await apiSignOut();
       setUser(null);
-      /**
-       * Wipe the local cache on the way out. Now that an account is required,
-       * whatever is on screen belongs to the account that just left — and on a
-       * shared or library computer the next person to sign in would otherwise
-       * inherit it *and* push it into their own account on reconcile. The data
-       * is safe on the server; this copy is only a cache.
-       */
-      localStorage.removeItem(STUDY_SETS_KEY);
-      localStorage.removeItem('lumina.srs');
-      localStorage.removeItem('lumina.activity');
-      localStorage.removeItem('lumina.userName');
+      forgetLocalData();
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const signOutEverywhere = useCallback(async () => {
+    setBusy(true);
+    try {
+      await apiSignOutEverywhere();
+      setUser(null);
+      forgetLocalData();
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const deleteAccount = useCallback(async (password?: string) => {
+    setBusy(true);
+    try {
+      await apiDeleteAccount(password);
+      setUser(null);
+      forgetLocalData();
     } finally {
       setBusy(false);
     }
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, guest, busy, signUp, signIn, signOut }),
-    [user, loading, guest, busy, signUp, signIn, signOut],
+    () => ({ user, loading, guest, busy, signUp, signIn, signOut, signOutEverywhere, deleteAccount }),
+    [user, loading, guest, busy, signUp, signIn, signOut, signOutEverywhere, deleteAccount],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
