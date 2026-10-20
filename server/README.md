@@ -88,8 +88,16 @@ a restore drill are in [DEPLOY.md](../DEPLOY.md).
 - **Key isolation** — the provider key is read from `.env` (git-ignored) on the
   server only.
 - **Passwords** — scrypt with a per-user salt, constant-time verification.
-- **Sessions** — JWTs (pinned algorithm, 7-day expiry) in httpOnly,
-  SameSite=Lax cookies.
+- **Sessions** — server-side session records, named by a signed JWT (pinned
+  algorithm, 7-day expiry, account and session ids only) in an httpOnly,
+  SameSite=Lax cookie. Every request checks the session still exists, so
+  signing out, signing out everywhere, a password reset or deleting the account
+  ends sessions immediately.
+- **Destructive actions** — deleting the account needs the password again, or
+  a Google confirmation within the last five minutes.
+- **Cross-site requests** — state-changing API requests whose Origin or
+  Sec-Fetch-Site says they came from another site are refused, on top of the
+  SameSite cookie.
 - **Sign-up** — server-generated image CAPTCHA with single-use, server-held
   answers, plus a honeypot field.
 - **Sign-in** — per-account lockout after 5 failures; identical responses and
