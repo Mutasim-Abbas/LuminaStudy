@@ -213,3 +213,30 @@ without re-authentication, the AI quota race, and the missing secret scan
 | The hosting platform keeps its own request logs | They may record full URLs, including Google's one-time callback code, which is useless without the PKCE verifier but still sensitive | Check what Vercel records on first deploy; restrict who can read the logs |
 | Dev tooling (vitest, vite, tailwind) has advisories that need major upgrades | Development only; nothing ships to users | Upgrade in a dedicated change, now proposed by Dependabot |
 | Live services not yet exercised: a real Turso database, the Vercel deploy, Google sign-in and the secret scan's first CI run | Configuration mistakes would show only after deploy | The deploy-day checklist in §5 |
+
+## 5. Deploy-day security checklist
+
+None of these can be proven before the app runs on the real services. Do
+them on the first deploy, and again after any change to the hosting setup.
+
+1. **Secrets live only in Vercel's environment variables**, scoped to
+   Production, and are different from any used locally. `JWT_SECRET` is newly
+   generated for production.
+2. **The build is clean:** the CI run for the deployed commit is green,
+   including the secret scan.
+3. **Headers, from outside:** `curl -I https://<app>/` shows Helmet's headers
+   and `Referrer-Policy: no-referrer`; the session cookie is `HttpOnly`,
+   `Secure` and `SameSite=Lax`.
+4. **Client IPs:** sign in with a wrong password from two networks (e.g. Wi-Fi
+   and a phone's data) and check that each network gets its own rate limit.
+5. **Sessions end:** sign in on two browsers; "sign out of all devices" on one
+   signs the other out on its next request. Repeat with a password reset.
+6. **Isolation:** with two accounts, one can't see or change the other's sets.
+7. **Deletion:** deleting an account asks for the password (or a Google
+   confirmation) and leaves nothing behind in Turso.
+8. **Cross-site writes:** a POST to `/api/auth/login` with
+   `Origin: https://example.com` gets a 403.
+9. **Google sign-in:** sign in, link, confirm and cancel all land where they
+   should; Vercel's request logs show what they record for the callback URL.
+10. **Nothing private is served:** `/.env`, `/server/.env` and `/data/` return
+    404.
