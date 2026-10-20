@@ -102,9 +102,7 @@ describe('starting Google sign-in', () => {
     const { res, location } = await begin();
     expect(res.statusCode).toBe(302);
     expect(location.origin).toBe('https://accounts.google.com');
-    expect(location.searchParams.get('redirect_uri')).toBe(
-      `${APP_URL}/api/auth/google/callback`,
-    );
+    expect(location.searchParams.get('redirect_uri')).toBe(`${APP_URL}/api/auth/google/callback`);
 
     const flow = res.cookies.find((c) => c.name === 'lumina_google')!;
     expect(flow.httpOnly).toBe(true);
@@ -122,7 +120,7 @@ describe('starting Google sign-in', () => {
 });
 
 describe('the callback refuses', () => {
-  it('a sign-in the user cancelled on Google\'s screen', async () => {
+  it("a sign-in the user cancelled on Google's screen", async () => {
     const attempt = await begin();
     const res = await finish(attempt, { query: { error: 'access_denied', state: attempt.state } });
     expect(landing(res)).toBe('/#/account?google=cancelled');
@@ -181,7 +179,11 @@ describe('signing in with Google', () => {
 
     const session = sessionFrom(res);
     expect(session).toBeDefined();
-    const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: session! } });
+    const me = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: session! },
+    });
     expect(me.json().user).toMatchObject({
       email: 'grace@example.com',
       name: 'Grace Hopper',
