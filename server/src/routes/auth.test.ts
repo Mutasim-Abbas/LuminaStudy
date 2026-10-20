@@ -797,6 +797,26 @@ describe('password reset', () => {
     expect(login.statusCode).toBe(401);
   });
 
+  it('signs out every existing session, so a stolen cookie dies with the old password', async () => {
+    const stolen = cookieFrom(await signup());
+    await requestReset();
+    const reset = await app.inject({
+      method: 'POST',
+      url: '/api/auth/reset',
+      payload: { token: tokenFromEmail(), password: 'a brand new password' },
+    });
+    expect(reset.statusCode).toBe(200);
+
+    for (const url of ['/api/sets', '/api/generate/quota']) {
+      const res = await app.inject({ method: 'GET', url, headers: { cookie: stolen } });
+      expect(res.statusCode, url).toBe(401);
+    }
+    // The browser that did the reset is signed in with a fresh session.
+    const fresh = cookieFrom(reset);
+    const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: fresh } });
+    expect(me.json().user.email).toBe(CREDS.email);
+  });
+
   it('rejects a token that has already been used', async () => {
     await signup();
     await requestReset();
