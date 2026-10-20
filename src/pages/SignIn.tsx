@@ -41,7 +41,7 @@ const GOOGLE_PROBLEMS: Record<string, string> = {
  * A hidden honeypot field sits behind it as a second, free signal.
  */
 export default function SignIn() {
-  const { user, guest, signIn, signUp, signOut, busy } = useAuth();
+  const { user, guest, signIn, signUp, signOut, signOutEverywhere, busy } = useAuth();
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -227,6 +227,15 @@ export default function SignIn() {
               Sign out
             </button>
           </div>
+          {/* For a lost phone or a shared computer: ends every session, everywhere. */}
+          <button
+            type="button"
+            onClick={() => signOutEverywhere()}
+            disabled={busy}
+            className="mt-4 font-label-sm text-label-sm text-on-surface-variant underline-offset-4 hover:text-primary hover:underline"
+          >
+            Sign out of all devices
+          </button>
           {googleSignIn &&
             (user.google ? (
               <p className="mt-8 font-label-sm text-label-sm text-on-surface-variant">
