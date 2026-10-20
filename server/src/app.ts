@@ -8,6 +8,7 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { env } from './env.js';
+import { requestForLog } from './lib/logging.js';
 import { healthRoutes } from './routes/health.js';
 import { generateRoutes } from './routes/generate.js';
 import { authRoutes } from './routes/auth.js';
@@ -27,7 +28,8 @@ const CLIENT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../dist'
  */
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: env.NODE_ENV !== 'test',
+    // Paths only in request logs — see lib/logging.ts.
+    logger: env.NODE_ENV !== 'test' && { serializers: { req: requestForLog } },
     // Trust known proxy addresses only, never the client's own headers.
     trustProxy: env.trustProxy,
     bodyLimit: 1_000_000, // 1 MB — generous for text, stops oversized payloads.
