@@ -27,3 +27,37 @@ starts. The open items are listed honestly in §4.
 | Deploy hygiene | `.vercelignore` for env files and local databases | Vercel's CLI skips `.env.local` but not `.env` |
 | Logs | Request logs record the path only, no query string | Google's one-time authorization code arrives in the callback's query string |
 | Local secrets | `server/.env` readable by the owner only (`chmod 600`) | Other accounts on the machine could read it |
+
+## 2. Controls in place
+
+### 2.1 Secrets and configuration
+
+- All secrets come from environment variables. `.env` files are ignored by
+  git, excluded from Docker builds (`.dockerignore`) and from Vercel CLI
+  uploads (`.vercelignore`); only the empty `server/.env.example` is committed.
+- The AI provider key exists only on the server. The browser calls `/api/*`
+  and never the provider.
+- In production the server refuses to boot without a strong `JWT_SECRET`
+  (32+ characters), refuses a Turso URL without its token, and the container
+  refuses to start without a backup bucket. Password-reset email has no
+  console fallback in production.
+- The key-check script prints only a key's first five characters.
+
+### 2.2 Accounts and sessions
+
+- Passwords: scrypt with a per-user salt, constant-time comparison, 8–200
+  characters. Never stored or returned in plain text.
+- Sessions: HS256 JWT with the algorithm pinned (no `alg: none` or algorithm
+  confusion), 7-day expiry, in an `httpOnly`, `SameSite=Lax` cookie that is
+  `Secure` in production. `/api/auth/me` reads the account from the database,
+  so a deleted account stops looking signed in.
+- Sign-up: server-drawn image CAPTCHA (answer held server-side, single-use,
+  5-minute expiry) plus a hidden honeypot field.
+- Sign-in: 5 failures per email, then a 15-minute lockout that survives IP
+  changes. Unknown emails and wrong passwords get identical answers and the
+  same hashing time, so the endpoint reveals nothing about which accounts
+  exist.
+- Password reset: 32 random bytes, stored only as a SHA-256 hash, single use,
+  30-minute expiry, earlier links retired in the same transaction a new one is
+  issued in. The request endpoint answers identically for every address. The
+  token travels in the URL fragment, which browsers never send to the server.
