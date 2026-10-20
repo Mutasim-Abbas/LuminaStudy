@@ -9,6 +9,7 @@ import rateLimit from '@fastify/rate-limit';
 import fastifyStatic from '@fastify/static';
 import { env } from './env.js';
 import { requestForLog } from './lib/logging.js';
+import { refuseCrossSiteWrites } from './lib/origin.js';
 import { healthRoutes } from './routes/health.js';
 import { generateRoutes } from './routes/generate.js';
 import { authRoutes } from './routes/auth.js';
@@ -43,6 +44,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   });
   await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
   await app.register(cookie, { secret: env.JWT_SECRET });
+  // Refuse state-changing API requests from other sites (lib/origin.ts).
+  app.addHook('onRequest', refuseCrossSiteWrites);
 
   await app.register(healthRoutes);
   await app.register(generateRoutes);
