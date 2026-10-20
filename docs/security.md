@@ -240,3 +240,22 @@ them on the first deploy, and again after any change to the hosting setup.
    should; Vercel's request logs show what they record for the callback URL.
 10. **Nothing private is served:** `/.env`, `/server/.env` and `/data/` return
     404.
+
+## 6. If something leaks
+
+Removing a secret from the code doesn't make it safe — anyone who copied it
+still has it. Rotate first, clean up second.
+
+| What leaked | Do this first | Then |
+| --- | --- | --- |
+| `JWT_SECRET` | Set a new one in Vercel and redeploy: every token signed with the old one stops verifying | Everyone signs in again; that's the point |
+| One account's session (a stolen cookie) | The owner signs out of all devices, or resets the password | Both end every session immediately |
+| `GROQ_API_KEY` | Revoke it in the Groq console and create a new one | Check Groq's usage page for spending you didn't make |
+| `RESEND_API_KEY` | Revoke it in Resend | Check the sending log for mail you didn't send |
+| `DATABASE_AUTH_TOKEN` | Revoke it in Turso and issue a new one | Assume the data was read; check Turso's activity |
+| `GOOGLE_CLIENT_SECRET` | Reset it in Google Cloud | Update Vercel and redeploy |
+| Backup keys (container setup) | Delete the key in Backblaze and make a new one | The backups themselves may have been read |
+
+Afterwards: find how it leaked, add a test or a scanner rule so it can't
+happen the same way again, and only then rewrite history if the secret was
+committed — rewriting doesn't un-leak it.
