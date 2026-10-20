@@ -218,9 +218,22 @@ export async function authRoutes(app: FastifyInstance) {
     return reply.send({ user: row ? publicUser(row) : null });
   });
 
-  /** Deletes the account and, by cascade, everything it owns. */
+  /**
+   * Deletes the account and everything it owns. Each table is cleared
+   * explicitly rather than left to ON DELETE CASCADE: Turso, like SQLite,
+   * ships with foreign-key enforcement off, and a deleted account must not
+   * leave its study sets behind on any backend. One transaction, so it is
+   * all gone or all still there.
+   */
   app.delete('/api/auth/me', { preHandler: requireAuth }, async (request, reply) => {
-    await database.run('DELETE FROM users WHERE id = ?', request.user!.id);
+    const { id, email } = request.user!;
+    await database.transaction(async (tx) => {
+      for (const table of ['study_sets', 'ai_usage', 'password_resets']) {
+        await tx.run(`DELETE FROM ${table} WHERE user_id = ?`, id);
+      }
+      await tx.run('DELETE FROM login_attempts WHERE email = ?', email);
+      await tx.run('DELETE FROM users WHERE id = ?', id);
+    });
     clearSessionCookie(reply);
     return reply.send({ ok: true });
   });
