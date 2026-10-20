@@ -1,13 +1,14 @@
-import type { DatabaseSync } from 'node:sqlite';
+import type { Database } from './database.js';
 
 /**
  * Versioned schema migrations.
  *
  * The schema version lives in SQLite's own `PRAGMA user_version` — an integer
- * in the database file header — so there is no bookkeeping table to create
- * first. Each migration runs in its own transaction together with the version
- * bump: SQLite's DDL is transactional, so a migration that fails part-way
- * leaves neither half a schema nor a version that claims it finished.
+ * in the database file header, which Turso supports too — so there is no
+ * bookkeeping table to create first. Each migration runs in its own
+ * transaction together with the version bump: SQLite's DDL is transactional,
+ * so a migration that fails part-way leaves neither half a schema nor a
+ * version that claims it finished.
  */
 
 export interface Migration {
@@ -15,16 +16,17 @@ export interface Migration {
   version: number;
   /** What it does, for the startup log. */
   name: string;
-  up(db: DatabaseSync): void;
+  /** Runs inside the migration's transaction; use the `tx` it is given. */
+  up(tx: Database): Promise<void>;
 }
 
-export function schemaVersion(db: DatabaseSync): number {
-  const row = db.prepare('PRAGMA user_version').get() as { user_version: number };
-  return row.user_version;
+export async function schemaVersion(db: Database): Promise<number> {
+  const row = await db.get<{ user_version: number }>('PRAGMA user_version');
+  return Number(row?.user_version ?? 0);
 }
 
 /** Applies every migration above the database's version, in order. Returns the versions applied. */
-export function migrate(db: DatabaseSync, migrations: readonly Migration[]): number[] {
+export async function migrate(db: Database, migrations: readonly Migration[]): Promise<number[]> {
   // Versions must run 1, 2, 3, … with no gaps or repeats. A gap would be
   // skipped on new databases; a repeat would never run on existing ones.
   migrations.forEach((m, i) => {
@@ -33,7 +35,7 @@ export function migrate(db: DatabaseSync, migrations: readonly Migration[]): num
     }
   });
 
-  const current = schemaVersion(db);
+  const current = await schemaVersion(db);
   const latest = migrations.at(-1)?.version ?? 0;
 
   // A database written by a newer build — typically after rolling a deploy
@@ -47,21 +49,14 @@ export function migrate(db: DatabaseSync, migrations: readonly Migration[]): num
   }
 
   const applied: number[] = [];
-
   for (const migration of migrations) {
     if (migration.version <= current) continue;
-    db.exec('BEGIN');
-    try {
-      migration.up(db);
+    await db.transaction(async (tx) => {
+      await migration.up(tx);
       // PRAGMA takes no bound parameters; the version is a number we own.
-      db.exec(`PRAGMA user_version = ${migration.version}`);
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+      await tx.exec(`PRAGMA user_version = ${migration.version}`);
+    });
     applied.push(migration.version);
   }
-
   return applied;
 }
