@@ -307,6 +307,26 @@ describe('session', () => {
     const cleared = res.cookies.find((c) => c.name === 'lumina_session');
     expect(cleared?.value).toBe('');
   });
+
+  it('ends the session itself, so a copied cookie stops working after logout', async () => {
+    const cookie = cookieFrom(await signup());
+    await app.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie } });
+
+    // The same cookie replayed — say, copied off the machine earlier.
+    const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    expect(me.json().user).toBeNull();
+    const sets = await app.inject({ method: 'GET', url: '/api/sets', headers: { cookie } });
+    expect(sets.statusCode).toBe(401);
+  });
+
+  it('signs out only this device', async () => {
+    await signup();
+    const laptop = cookieFrom(await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }));
+    const phone = cookieFrom(await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }));
+    await app.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie: phone } });
+    const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: laptop } });
+    expect(me.json().user.email).toBe(CREDS.email);
+  });
 });
 
 describe('sign-in lockout', () => {
