@@ -20,13 +20,7 @@ import {
   resolveResetToken,
   RESET_TTL_MINUTES,
 } from '../lib/passwordReset.js';
-import {
-  clearSessionCookie,
-  currentUser,
-  requireAuth,
-  setSessionCookie,
-  signSession,
-} from '../lib/auth.js';
+import { clearSessionCookie, currentSession, requireAuth, startSession } from '../lib/auth.js';
 
 /**
  * Email/password accounts.
@@ -147,7 +141,7 @@ export async function authRoutes(app: FastifyInstance) {
       Date.now(),
     );
 
-    setSessionCookie(reply, signSession(user));
+    await startSession(reply, user.id, Date.now());
     return reply.code(201).send({ user: publicUser(user) });
   });
 
@@ -196,8 +190,7 @@ export async function authRoutes(app: FastifyInstance) {
     await clearLoginFailures(email);
     await pruneLoginAttempts(now);
 
-    const user = { id: row.id, email: row.email, name: row.name ?? '' };
-    setSessionCookie(reply, signSession(user));
+    await startSession(reply, row.id, now);
     return reply.send({ user: publicUser(row) });
   });
 
@@ -208,14 +201,11 @@ export async function authRoutes(app: FastifyInstance) {
 
   /** Who am I? Returns null rather than 401 so the client can boot either way. */
   app.get('/api/auth/me', async (request, reply) => {
-    const session = currentUser(request);
-    // Read the account itself rather than echoing the token's claims, so the
-    // answer reflects changes since sign-in — such as linking Google — and a
-    // deleted account stops looking signed in.
-    const row = session
-      ? await database.get<UserRow>('SELECT * FROM users WHERE id = ?', session.id)
-      : undefined;
-    return reply.send({ user: row ? publicUser(row) : null });
+    // The account as stored now, so the answer reflects changes since sign-in
+    // (such as linking Google), and an ended session or deleted account stops
+    // looking signed in.
+    const current = await currentSession(request);
+    return reply.send({ user: current ? publicUser(current.user) : null });
   });
 
   /**
@@ -366,8 +356,7 @@ export async function authRoutes(app: FastifyInstance) {
       // Sign them straight in: they've demonstrated ownership, and bouncing
       // them to a login form to retype the password they just chose is friction
       // for no security gain.
-      const user = { id: row.id, email: row.email, name: row.name ?? '' };
-      setSessionCookie(reply, signSession(user));
+      await startSession(reply, row.id, now);
       return reply.send({ user: publicUser(row) });
     },
   );

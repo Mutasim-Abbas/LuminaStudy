@@ -1,25 +1,29 @@
 import jwt from 'jsonwebtoken';
 import type { FastifyReply, FastifyRequest } from 'fastify';
+import { database, type UserRow } from '../db.js';
 import { env } from '../env.js';
+import type { Database } from './database.js';
+import { createSession, findSession, SESSION_TTL_MS, type ActiveSession } from './sessions.js';
 
 /**
  * Session handling.
  *
- * The session token is a JWT delivered in an httpOnly cookie: JavaScript on the
- * page can never read it, so an XSS bug cannot exfiltrate a login. SameSite=Lax
- * keeps other origins from riding the cookie on state-changing requests, and the
- * Secure flag is set whenever we aren't on plain-HTTP localhost.
+ * The cookie holds a signed JWT naming a server-side session (lib/sessions.ts).
+ * Both must check out: the signature, so forged or tampered tokens are turned
+ * away without touching the database, and the session row, so a session can
+ * be ended — sign-out, a password reset, account deletion — before the cookie
+ * expires. The token carries only the account and session ids: a JWT is
+ * signed, not encrypted, so no personal details belong in it.
+ *
+ * The cookie is httpOnly, so JavaScript on the page can never read it and an
+ * XSS bug cannot exfiltrate a login. SameSite=Lax keeps other origins from
+ * riding it on state-changing requests, and the Secure flag is set whenever we
+ * aren't on plain-HTTP localhost.
  */
 
 export const SESSION_COOKIE = 'lumina_session';
 
-/**
- * Seven days, not thirty. Sessions are stateless, so a stolen token is valid
- * until it expires and cannot be revoked — the expiry *is* the containment,
- * which makes a shorter one meaningfully safer.
- */
-const SESSION_DAYS = 7;
-const SESSION_MAX_AGE_S = SESSION_DAYS * 24 * 60 * 60;
+const SESSION_MAX_AGE_S = SESSION_TTL_MS / 1000;
 
 /**
  * Pinned explicitly rather than left to the library's defaults. An unpinned
@@ -38,28 +42,26 @@ export interface SessionUser {
 declare module 'fastify' {
   interface FastifyRequest {
     user?: SessionUser;
+    sessionId?: string;
   }
 }
 
-export function signSession(user: SessionUser): string {
-  return jwt.sign({ sub: user.id, email: user.email, name: user.name }, env.JWT_SECRET, {
+export function signSession(sessionId: string, userId: string): string {
+  return jwt.sign({ sub: userId, sid: sessionId }, env.JWT_SECRET, {
     algorithm: ALGORITHM,
-    expiresIn: `${SESSION_DAYS}d`,
+    expiresIn: SESSION_MAX_AGE_S,
   });
 }
 
-/** Returns the session user, or null for a missing/expired/tampered token. */
-export function verifySession(token: string | undefined): SessionUser | null {
+/** The ids a token names, or null for a missing, expired, forged or old-format token. */
+export function verifySession(token: string | undefined): { userId: string; sessionId: string } | null {
   if (!token) return null;
   try {
     const payload = jwt.verify(token, env.JWT_SECRET, { algorithms: [ALGORITHM] });
     if (typeof payload === 'string' || !payload.sub) return null;
-    const claims = payload as { email?: string; name?: string };
-    return {
-      id: String(payload.sub),
-      email: String(claims.email ?? ''),
-      name: String(claims.name ?? ''),
-    };
+    const sid = (payload as { sid?: unknown }).sid;
+    if (typeof sid !== 'string') return null;
+    return { userId: String(payload.sub), sessionId: sid };
   } catch {
     // Expired or forged — treated the same way: no session.
     return null;
@@ -86,20 +88,51 @@ export function clearSessionCookie(reply: FastifyReply): void {
   reply.clearCookie(SESSION_COOKIE, { path: '/' });
 }
 
-/** Reads the session without requiring one. */
-export function currentUser(request: FastifyRequest): SessionUser | null {
-  return verifySession(request.cookies?.[SESSION_COOKIE]);
+/** Signs a user in on this browser: a new session, and the cookie that names it. */
+export async function startSession(
+  reply: FastifyReply,
+  userId: string,
+  now: number,
+  db?: Database,
+): Promise<void> {
+  const sessionId = await createSession(userId, now, db);
+  setSessionCookie(reply, signSession(sessionId, userId));
+}
+
+export interface CurrentSession {
+  user: UserRow;
+  sessionId: string;
+  session: ActiveSession;
 }
 
 /**
- * Fastify preHandler: rejects the request unless a valid session is present,
- * and attaches `request.user` for the route to use.
+ * The signed-in account, read fresh from the database, or null. Null unless
+ * the token is genuine, its session still exists and belongs to that account,
+ * and the account itself still exists.
+ */
+export async function currentSession(request: FastifyRequest): Promise<CurrentSession | null> {
+  const token = verifySession(request.cookies?.[SESSION_COOKIE]);
+  if (!token) return null;
+  const session = await findSession(token.sessionId, Date.now());
+  if (!session || session.userId !== token.userId) return null;
+  const user = await database.get<UserRow>('SELECT * FROM users WHERE id = ?', token.userId);
+  if (!user) return null;
+  return { user, sessionId: token.sessionId, session };
+}
+
+/**
+ * Fastify preHandler: rejects the request unless a live session is present,
+ * and attaches `request.user` and `request.sessionId` for the route to use.
  */
 export async function requireAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> {
-  const user = currentUser(request);
-  if (!user) {
+  const current = await currentSession(request);
+  if (!current) {
+    // A cookie for an ended session is useless; drop it so the client stops sending it.
+    if (request.cookies?.[SESSION_COOKIE]) clearSessionCookie(reply);
     await reply.code(401).send({ error: 'unauthorized', message: 'Please sign in.' });
     return;
   }
-  request.user = user;
+  const { id, email, name } = current.user;
+  request.user = { id, email, name };
+  request.sessionId = current.sessionId;
 }

@@ -2,7 +2,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { database, type UserRow } from '../db.js';
 import { env } from '../env.js';
-import { currentUser, setSessionCookie, signSession } from '../lib/auth.js';
+import { currentSession, startSession } from '../lib/auth.js';
 import {
   createAuthRequest,
   exchangeCode,
@@ -62,8 +62,8 @@ function sameString(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-function signInAndGo(reply: FastifyReply, row: UserRow) {
-  setSessionCookie(reply, signSession({ id: row.id, email: row.email, name: row.name }));
+async function signInAndGo(reply: FastifyReply, row: UserRow) {
+  await startSession(reply, row.id, Date.now());
   return reply.redirect(appUrl('/'));
 }
 
@@ -81,7 +81,7 @@ export async function googleRoutes(app: FastifyInstance) {
 
     // ?link=1 connects Google to the account that is signed in right now.
     const linking = (request.query as { link?: string }).link === '1';
-    const session = currentUser(request);
+    const session = (await currentSession(request))?.user;
     if (linking && !session) return fail(reply, 'signed_out');
 
     const auth = createAuthRequest(env.GOOGLE_CLIENT_ID!, env.googleRedirectUri);
@@ -137,7 +137,7 @@ export async function googleRoutes(app: FastifyInstance) {
     if (flow.linkUserId) {
       // Connecting Google to the signed-in account. The session must still be
       // the one that started this: someone else may have signed in since.
-      const session = currentUser(request);
+      const session = (await currentSession(request))?.user;
       if (!session || session.id !== flow.linkUserId) return fail(reply, 'signed_out');
       // One Google account signs into one Lumina account, never two.
       const owner = await database.get<{ id: string }>(

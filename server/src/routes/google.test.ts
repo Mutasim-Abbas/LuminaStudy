@@ -17,7 +17,7 @@ const google = fakeGoogle(CLIENT_ID);
 let app: FastifyInstance;
 let database: (typeof import('../db.js'))['database'];
 let clearSigningKeyCache: () => void;
-let signSession: (typeof import('../lib/auth.js'))['signSession'];
+let sessionCookieFor: (typeof import('../testing/sessions.js'))['sessionCookieFor'];
 
 beforeAll(async () => {
   vi.stubEnv('GOOGLE_CLIENT_ID', CLIENT_ID);
@@ -25,7 +25,7 @@ beforeAll(async () => {
   vi.stubEnv('APP_URL', APP_URL);
   ({ database } = await import('../db.js'));
   ({ clearSigningKeyCache } = await import('../lib/google.js'));
-  ({ signSession } = await import('../lib/auth.js'));
+  ({ sessionCookieFor } = await import('../testing/sessions.js'));
   const { buildApp } = await import('../app.js');
   app = await buildApp();
 });
@@ -248,7 +248,7 @@ describe('connecting Google to a password account', () => {
       id,
       email,
     );
-    return `lumina_session=${signSession({ id, email, name: 'Ada' })}`;
+    return sessionCookieFor(id);
   }
 
   it('links the Google account, and Google sign-in then opens that account', async () => {

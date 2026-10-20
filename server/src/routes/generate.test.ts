@@ -16,9 +16,13 @@ let cookie: string;
 beforeAll(async () => {
   vi.stubEnv('GROQ_API_KEY', 'gsk_test_key_not_a_real_one');
   const { buildApp } = await import('../app.js');
-  const { signSession } = await import('../lib/auth.js');
+  const { database } = await import('../db.js');
+  const { sessionCookieFor } = await import('../testing/sessions.js');
   app = await buildApp();
-  cookie = `lumina_session=${signSession({ id: 'u1', email: 'ada@example.com', name: 'Ada' })}`;
+  await database.run(
+    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES ('u1', 'ada@example.com', 'Ada', '', 1)",
+  );
+  cookie = await sessionCookieFor('u1');
 });
 
 afterAll(async () => {
