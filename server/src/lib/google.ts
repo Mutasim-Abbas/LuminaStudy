@@ -54,3 +54,61 @@ export function createAuthRequest(clientId: string, redirectUri: string): AuthRe
 
   return { url: url.toString(), state, nonce, codeVerifier };
 }
+
+export const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+
+export interface GoogleClient {
+  clientId: string;
+  clientSecret: string;
+  redirectUri: string;
+}
+
+/** Why a Google sign-in was refused. Logged for the operator, never shown raw. */
+export class GoogleAuthError extends Error {
+  constructor(
+    readonly reason: 'exchange_failed' | 'invalid_token' | 'email_unverified',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'GoogleAuthError';
+  }
+}
+
+/**
+ * Trades the one-time authorization code for an ID token. Server to Google
+ * directly, with the client secret and the PKCE verifier — neither ever passes
+ * through the browser.
+ */
+export async function exchangeCode(
+  code: string,
+  codeVerifier: string,
+  client: GoogleClient,
+): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(GOOGLE_TOKEN_URL, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        code,
+        code_verifier: codeVerifier,
+        client_id: client.clientId,
+        client_secret: client.clientSecret,
+        redirect_uri: client.redirectUri,
+        grant_type: 'authorization_code',
+      }),
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    throw new GoogleAuthError('exchange_failed', `Could not reach Google: ${(err as Error).message}`);
+  }
+
+  const body = (await res.json().catch(() => ({}))) as { id_token?: unknown; error?: unknown };
+  if (!res.ok || typeof body.id_token !== 'string') {
+    throw new GoogleAuthError(
+      'exchange_failed',
+      `Google refused the code (HTTP ${res.status}${body.error ? `, ${String(body.error)}` : ''})`,
+    );
+  }
+  return body.id_token;
+}
