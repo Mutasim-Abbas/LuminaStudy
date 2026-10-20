@@ -36,7 +36,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await database.exec('DELETE FROM study_sets; DELETE FROM users;');
+  await database.exec('DELETE FROM sessions; DELETE FROM study_sets; DELETE FROM users;');
   clearSigningKeyCache();
 });
 

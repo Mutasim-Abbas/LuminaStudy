@@ -21,7 +21,7 @@ beforeEach(async () => {
   // rows leak failure counts and quota between tests, which silently changes
   // what later assertions are actually measuring.
   await database.exec(
-    'DELETE FROM study_sets; DELETE FROM ai_usage; DELETE FROM login_attempts; DELETE FROM password_resets; DELETE FROM users;',
+    'DELETE FROM sessions; DELETE FROM study_sets; DELETE FROM ai_usage; DELETE FROM login_attempts; DELETE FROM password_resets; DELETE FROM users;',
   );
   if (!app) app = await buildApp();
 });
