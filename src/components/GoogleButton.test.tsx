@@ -1,6 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
 import { GoogleButton } from './GoogleButton';
+
+// Unmount between tests, so each one queries only its own button.
+afterEach(cleanup);
 
 describe('GoogleButton', () => {
   it('is a link to the server route, labelled the way Google allows', () => {
