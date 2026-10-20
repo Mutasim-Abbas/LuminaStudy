@@ -225,6 +225,24 @@ describe('login', () => {
     expect(unknown.statusCode).toBe(badPass.statusCode);
     expect(unknown.json()).toEqual(badPass.json());
   });
+
+  it('refuses any password for an account made through Google', async () => {
+    db.prepare(
+      "INSERT INTO users (id, email, name, password_hash, google_sub, created_at) VALUES ('g1', 'grace@example.com', 'Grace', '', 'google-1', 1)",
+    ).run();
+    const attempt = (password: string) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { email: 'grace@example.com', password },
+      });
+    for (const password of ['correct horse battery', '        ']) {
+      const res = await attempt(password);
+      expect(res.statusCode).toBe(401);
+      expect(res.json().error).toBe('invalid_credentials');
+      expect(res.cookies.find((c) => c.name === 'lumina_session')).toBeUndefined();
+    }
+  });
 });
 
 describe('session', () => {
