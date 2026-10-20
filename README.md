@@ -145,8 +145,14 @@ their plans — is in [docs/security.md](docs/security.md). In short:
   `/api/*` and never to the provider directly.
 - Passwords are hashed with scrypt (per-user salt, constant-time comparison)
   and never leave the server in any form.
-- Sessions are JWTs in httpOnly, SameSite cookies — page scripts cannot read
-  the token.
+- Sessions are server-side records named by a signed token in an httpOnly,
+  SameSite cookie — page scripts cannot read it, and signing out (on one device
+  or all of them), resetting the password or deleting the account ends
+  sessions immediately.
+- Deleting the account needs the password again, or a fresh Google
+  confirmation; state-changing requests from other sites are refused.
+- CI scans every commit for leaked secrets, and Dependabot proposes dependency
+  updates weekly.
 - Sign-up is protected by a server-generated image CAPTCHA (single-use,
   server-held answers) plus a honeypot field.
 - Sign-in is limited to 5 attempts per account before a 15-minute lockout,
