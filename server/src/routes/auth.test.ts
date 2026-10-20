@@ -649,6 +649,28 @@ describe('per-user isolation', () => {
     const rows = (await database.get<{ n: number }>('SELECT COUNT(*) AS n FROM study_sets'))!;
     expect(rows.n).toBe(0);
   });
+
+  it('removes everything the account owns even with foreign keys off, as on Turso', async () => {
+    await database.exec('PRAGMA foreign_keys = OFF');
+    try {
+      const cookie = cookieFrom(await signup());
+      await app.inject({ method: 'PUT', url: '/api/sets/s1', headers: { cookie }, payload: sampleSet() });
+      await app.inject({ method: 'POST', url: '/api/auth/forgot', payload: { email: CREDS.email } });
+      await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: { ...CREDS, password: 'wrong password' },
+      });
+
+      const del = await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
+      expect(del.statusCode).toBe(200);
+      for (const table of ['users', 'study_sets', 'ai_usage', 'password_resets', 'login_attempts']) {
+        expect(await database.get(`SELECT COUNT(*) AS n FROM ${table}`), table).toEqual({ n: 0 });
+      }
+    } finally {
+      await database.exec('PRAGMA foreign_keys = ON');
+    }
+  });
 });
 
 describe('password reset', () => {
