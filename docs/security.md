@@ -61,3 +61,21 @@ starts. The open items are listed honestly in §4.
   30-minute expiry, earlier links retired in the same transaction a new one is
   issued in. The request endpoint answers identically for every address. The
   token travels in the URL fragment, which browsers never send to the server.
+
+### 2.3 Sign in with Google
+
+- Authorization-code flow with `state` (stops login CSRF), PKCE (an intercepted
+  code is useless) and `nonce` (a token can't be replayed into another
+  sign-in). The three values live in a signed, `httpOnly`, 10-minute cookie
+  scoped to the two Google routes and cleared after one use.
+- The ID token is fully verified: Google's RS256 signature against its
+  published keys, issuer, audience, expiry and nonce, and the email must be
+  Google-verified. Key fetches are cached and refreshed at most once a minute,
+  so forged key ids can't cause a flood of requests.
+- Accounts are keyed on Google's permanent account id, not the email.
+- An email that already has a password account is never joined automatically
+  (pre-account-hijacking defence). Linking happens from the account page after
+  a password sign-in, only if the same account is still signed in when Google
+  returns, and one Google account can open only one Lumina account.
+- The redirect URI is built from configuration, never from the request's Host
+  header.
