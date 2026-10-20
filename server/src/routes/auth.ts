@@ -367,12 +367,15 @@ export async function authRoutes(app: FastifyInstance) {
         });
       }
 
-      await database.run(
-        'UPDATE users SET password_hash = ? WHERE id = ?',
-        await hashPassword(parsed.data.password),
-        userId,
-      );
-      await consumeResetToken(parsed.data.token, now);
+      const passwordHash = await hashPassword(parsed.data.password);
+      // One transaction: the new password, the spent link, and the end of every
+      // existing session. A reset is often a response to a stolen login, and a
+      // stolen cookie must stop working the moment the password changes.
+      await database.transaction(async (tx) => {
+        await tx.run('UPDATE users SET password_hash = ? WHERE id = ?', passwordHash, userId);
+        await consumeResetToken(parsed.data.token, now, tx);
+        await endAllSessions(userId, tx);
+      });
 
       // Someone who just proved control of the inbox shouldn't still be serving
       // out a lockout earned by forgetting the old password.
