@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import {
   ApiError,
@@ -12,6 +12,23 @@ import {
 import { GoogleButton } from '../components/GoogleButton';
 import { LuminaMark } from '../components/LuminaMark';
 import { SyncIcon } from '../components/icons';
+
+/**
+ * Why a Google sign-in came back here instead of into the app. The server
+ * sends a short reason code (routes/google.ts); this is what it means.
+ */
+const GOOGLE_PROBLEMS: Record<string, string> = {
+  cancelled: 'Google sign-in was cancelled.',
+  expired: 'That sign-in took too long or was started in another tab. Please try again.',
+  failed: 'Google sign-in didn’t go through. Please try again.',
+  email_unverified:
+    'Google hasn’t verified that email address, so it can’t be used to sign in yet.',
+  account_exists:
+    'This email already has a Lumina account. Sign in with your password, then connect Google from your account page.',
+  already_linked: 'That Google account is already connected to a different Lumina account.',
+  signed_out: 'Sign in first, then connect Google from your account page.',
+  unavailable: 'Google sign-in isn’t available right now.',
+};
 
 /**
  * Combined sign-in / sign-up. One form, one toggle — asking a student to find
@@ -33,7 +50,11 @@ export default function SignIn() {
   const [captcha, setCaptcha] = useState<Captcha | null>(null);
   const [captchaInput, setCaptchaInput] = useState('');
   const [captchaLoading, setCaptchaLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const googleReason = searchParams.get('google');
+  const [error, setError] = useState<string | null>(
+    () => (googleReason && GOOGLE_PROBLEMS[googleReason]) || null,
+  );
   /** Set once a reset link has been requested — swaps the form for a receipt. */
   const [resetSent, setResetSent] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
