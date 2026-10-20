@@ -28,7 +28,7 @@ import {
   startSession,
   verifySession,
 } from '../lib/auth.js';
-import { endAllSessions, endSession } from '../lib/sessions.js';
+import { endAllSessions, endSession, pruneSessions } from '../lib/sessions.js';
 
 /**
  * Email/password accounts.
@@ -197,6 +197,7 @@ export async function authRoutes(app: FastifyInstance) {
 
     await clearLoginFailures(email);
     await pruneLoginAttempts(now);
+    await pruneSessions(now);
 
     await startSession(reply, row.id, now);
     return reply.send({ user: publicUser(row) });
