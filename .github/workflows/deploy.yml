@@ -35,7 +35,7 @@ jobs:
       # Pages serves the site from /LuminaStudy/, not the domain root.
       - run: npm run build -- --base=/LuminaStudy/
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
