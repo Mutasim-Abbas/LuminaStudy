@@ -149,6 +149,22 @@ describe('the callback refuses', () => {
     expect(landing(res)).toBe('/#/account?google=expired');
   });
 
+  it('when Google rejects the code', async () => {
+    const attempt = await begin();
+    vi.stubGlobal(
+      'fetch',
+      google.fetchImpl(() => Response.json({ error: 'invalid_grant' }, { status: 400 })),
+    );
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/auth/google/callback?code=used&state=${attempt.state}`,
+      headers: { cookie: attempt.flowCookie },
+    });
+    expect(landing(res)).toBe('/#/account?google=failed');
+    expect(sessionFrom(res)).toBeUndefined();
+    expect(db.prepare('SELECT count(*) AS n FROM users').get()).toEqual({ n: 0 });
+  });
+
   it('to leave an attempt behind that could be replayed', async () => {
     const attempt = await begin();
     const first = await finish(attempt);
@@ -265,5 +281,12 @@ describe('connecting Google to a password account', () => {
     expect(db.prepare("SELECT google_sub FROM users WHERE id = 'p1'").get()).toEqual({
       google_sub: null,
     });
+  });
+});
+
+describe('health', () => {
+  it('tells the sign-in page that Google sign-in is available', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/health' });
+    expect(res.json().googleSignIn).toBe(true);
   });
 });
