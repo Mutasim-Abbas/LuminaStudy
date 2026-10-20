@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { db, type UserRow } from '../db.js';
+import { database, type UserRow } from '../db.js';
 import { env } from '../env.js';
 import { currentUser, setSessionCookie, signSession } from '../lib/auth.js';
 import {
@@ -140,19 +140,21 @@ export async function googleRoutes(app: FastifyInstance) {
       const session = currentUser(request);
       if (!session || session.id !== flow.linkUserId) return fail(reply, 'signed_out');
       // One Google account signs into one Lumina account, never two.
-      const owner = db.prepare('SELECT id FROM users WHERE google_sub = ?').get(identity.sub) as
-        | { id: string }
-        | undefined;
+      const owner = await database.get<{ id: string }>(
+        'SELECT id FROM users WHERE google_sub = ?',
+        identity.sub,
+      );
       if (owner && owner.id !== session.id) return fail(reply, 'already_linked');
-      db.prepare('UPDATE users SET google_sub = ? WHERE id = ?').run(identity.sub, session.id);
+      await database.run('UPDATE users SET google_sub = ? WHERE id = ?', identity.sub, session.id);
       request.log.info({ userId: session.id }, 'google linked to account');
       return reply.redirect(appUrl('/account?google=linked'));
     }
 
     // Keyed on Google's account id, which never changes — not on the email.
-    const linked = db.prepare('SELECT * FROM users WHERE google_sub = ?').get(identity.sub) as
-      | UserRow
-      | undefined;
+    const linked = await database.get<UserRow>(
+      'SELECT * FROM users WHERE google_sub = ?',
+      identity.sub,
+    );
     if (linked) return signInAndGo(reply, linked);
 
     // An account already uses this email, but isn't linked to Google. It is
@@ -161,7 +163,7 @@ export async function googleRoutes(app: FastifyInstance) {
     // walked into that account, its real owner would be using an account a
     // stranger holds the password to. Linking happens from the account page,
     // after signing in with the password — proof of owning both.
-    const byEmail = db.prepare('SELECT id FROM users WHERE email = ?').get(identity.email);
+    const byEmail = await database.get('SELECT id FROM users WHERE email = ?', identity.email);
     if (byEmail) return fail(reply, 'account_exists');
 
     // New to Lumina: create the account. No password — an empty hash, which
@@ -176,9 +178,15 @@ export async function googleRoutes(app: FastifyInstance) {
       google_sub: identity.sub,
       created_at: now,
     };
-    db.prepare(
+    await database.run(
       'INSERT INTO users (id, email, name, password_hash, google_sub, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    ).run(row.id, row.email, row.name, row.password_hash, row.google_sub, row.created_at);
+      row.id,
+      row.email,
+      row.name,
+      row.password_hash,
+      row.google_sub,
+      row.created_at,
+    );
     request.log.info({ userId: row.id }, 'account created with Google');
     return signInAndGo(reply, row);
   });

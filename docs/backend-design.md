@@ -1,8 +1,12 @@
 # Lumina Study — backend, API and database design
 
-Status: **proposal**, 2026-10-19. Builds on the server that already exists in
-`server/` — this is not a rewrite. Database decision: **SQLite on a Railway
-volume for now** (see §2 for when that should change).
+Status: **proposal**, 2026-10-19; hosting revised 2026-10-20. Builds on the
+server that already exists in `server/` — this is not a rewrite.
+
+**Hosting decision (revised):** production runs on **Vercel + Turso** — the API
+as a stateless function, the data in hosted SQLite. The SQLite-on-a-volume
+design in §2 remains the self-hosted option (Docker, Railway) and still works
+as written.
 
 ## 1. Where it stands today
 
@@ -47,6 +51,13 @@ this design fixes.
    type-checks and tests the frontend.
 
 ## 2. Architecture
+
+**Production now (Vercel + Turso):** static frontend on Vercel's CDN; every
+`/api/*` request goes to one Vercel function running the same Fastify app; all
+state — including CAPTCHA answers, which used to live in memory — is in Turso.
+The server talks to the database through one async interface with two
+backends (Turso, local SQLite) held to the same contract tests, so the
+self-hosted setup below keeps working unchanged:
 
 ```
  Browser (React SPA, local-first)

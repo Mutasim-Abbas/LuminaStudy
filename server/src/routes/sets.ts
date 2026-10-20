@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { db, type StudySetRow } from '../db.js';
+import { database, type StudySetRow } from '../db.js';
+import type { Database } from '../lib/database.js';
 import { requireAuth } from '../lib/auth.js';
 
 /**
@@ -65,7 +66,8 @@ function toClient(row: StudySetRow) {
   };
 }
 
-function upsert(userId: string, set: StudySetInput, now: number) {
+/** Writes one set. Takes the database or a transaction, so a bulk push can be all-or-nothing. */
+async function upsert(db: Database, userId: string, set: StudySetInput, now: number) {
   const data = JSON.stringify({
     cards: set.cards,
     quiz: set.quiz,
@@ -74,7 +76,7 @@ function upsert(userId: string, set: StudySetInput, now: number) {
   });
   // The WHERE clause on update is what stops one user overwriting another's row
   // even if they somehow guessed the id.
-  db.prepare(
+  await db.run(
     `INSERT INTO study_sets (id, user_id, subject, title, description, data, mastery, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
@@ -85,7 +87,6 @@ function upsert(userId: string, set: StudySetInput, now: number) {
        mastery = excluded.mastery,
        updated_at = excluded.updated_at
      WHERE study_sets.user_id = excluded.user_id`,
-  ).run(
     set.id,
     userId,
     set.subject,
@@ -106,9 +107,10 @@ export async function setsRoutes(app: FastifyInstance) {
   });
 
   app.get('/api/sets', async (request, reply) => {
-    const rows = db
-      .prepare('SELECT * FROM study_sets WHERE user_id = ? ORDER BY updated_at DESC')
-      .all(request.user!.id) as unknown as StudySetRow[];
+    const rows = await database.all<StudySetRow>(
+      'SELECT * FROM study_sets WHERE user_id = ? ORDER BY updated_at DESC',
+      request.user!.id,
+    );
     return reply.send({ sets: rows.map(toClient) });
   });
 
@@ -127,10 +129,12 @@ export async function setsRoutes(app: FastifyInstance) {
         .send({ error: 'id_mismatch', message: 'The set id in the URL and body must match.' });
     }
 
-    upsert(request.user!.id, parsed.data, Date.now());
-    const row = db
-      .prepare('SELECT * FROM study_sets WHERE id = ? AND user_id = ?')
-      .get(id, request.user!.id) as StudySetRow | undefined;
+    await upsert(database, request.user!.id, parsed.data, Date.now());
+    const row = await database.get<StudySetRow>(
+      'SELECT * FROM study_sets WHERE id = ? AND user_id = ?',
+      id,
+      request.user!.id,
+    );
     if (!row) {
       return reply.code(409).send({ error: 'conflict', message: 'That set belongs to someone else.' });
     }
@@ -153,24 +157,20 @@ export async function setsRoutes(app: FastifyInstance) {
     const now = Date.now();
     const userId = request.user!.id;
     // One transaction: either the whole push lands or none of it does.
-    db.exec('BEGIN');
-    try {
-      for (const set of parsed.data.sets) upsert(userId, set, now);
-      db.exec('COMMIT');
-    } catch (err) {
-      db.exec('ROLLBACK');
-      throw err;
-    }
+    await database.transaction(async (tx) => {
+      for (const set of parsed.data.sets) await upsert(tx, userId, set, now);
+    });
 
-    const rows = db
-      .prepare('SELECT * FROM study_sets WHERE user_id = ? ORDER BY updated_at DESC')
-      .all(userId) as unknown as StudySetRow[];
+    const rows = await database.all<StudySetRow>(
+      'SELECT * FROM study_sets WHERE user_id = ? ORDER BY updated_at DESC',
+      userId,
+    );
     return reply.send({ sets: rows.map(toClient) });
   });
 
   app.delete('/api/sets/:id', async (request, reply) => {
     const { id } = request.params as { id: string };
-    db.prepare('DELETE FROM study_sets WHERE id = ? AND user_id = ?').run(id, request.user!.id);
+    await database.run('DELETE FROM study_sets WHERE id = ? AND user_id = ?', id, request.user!.id);
     return reply.send({ ok: true });
   });
 }
