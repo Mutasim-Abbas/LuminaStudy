@@ -53,9 +53,7 @@ export default function SignIn() {
   const [captchaLoading, setCaptchaLoading] = useState(false);
   const [searchParams] = useSearchParams();
   const googleReason = searchParams.get('google');
-  const [error, setError] = useState<string | null>(
-    () => (googleReason && GOOGLE_PROBLEMS[googleReason]) || null,
-  );
+  const [error, setError] = useState<string | null>(null);
   /** Set once a reset link has been requested — swaps the form for a receipt. */
   const [resetSent, setResetSent] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -87,6 +85,13 @@ export default function SignIn() {
       setCaptchaLoading(false);
     }
   }, []);
+
+  // Follow the reason in the address, not just the first one: arriving at
+  // /account again with a new ?google= is not a fresh mount.
+  useEffect(() => {
+    const problem = googleReason ? GOOGLE_PROBLEMS[googleReason] : undefined;
+    if (problem) setError(problem);
+  }, [googleReason]);
 
   useEffect(() => {
     let cancelled = false;
