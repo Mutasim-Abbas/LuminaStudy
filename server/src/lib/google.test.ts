@@ -1,9 +1,20 @@
 import { createHash } from 'node:crypto';
-import { describe, expect, it } from 'vitest';
-import { createAuthRequest, GOOGLE_AUTH_URL } from './google.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  createAuthRequest,
+  exchangeCode,
+  GOOGLE_AUTH_URL,
+  GOOGLE_TOKEN_URL,
+  GoogleAuthError,
+} from './google.js';
 
 const CLIENT_ID = 'client-123.apps.googleusercontent.com';
 const REDIRECT = 'https://lumina.example/api/auth/google/callback';
+const CLIENT = { clientId: CLIENT_ID, clientSecret: 'shh', redirectUri: REDIRECT };
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('createAuthRequest', () => {
   it('sends the browser to Google with state, nonce and a PKCE challenge', () => {
@@ -34,5 +45,41 @@ describe('createAuthRequest', () => {
     expect(a.codeVerifier).not.toBe(b.codeVerifier);
     // 32 random bytes each: long enough that guessing is not an attack.
     expect(a.state.length).toBeGreaterThanOrEqual(43);
+  });
+});
+
+describe('exchangeCode', () => {
+  it('posts the code, verifier and secret to Google and returns the ID token', async () => {
+    const fetchMock = vi.fn(async () => Response.json({ id_token: 'the.id.token' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(exchangeCode('auth-code', 'the-verifier', CLIENT)).resolves.toBe('the.id.token');
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(GOOGLE_TOKEN_URL);
+    const form = new URLSearchParams(String(init.body));
+    expect(Object.fromEntries(form)).toEqual({
+      code: 'auth-code',
+      code_verifier: 'the-verifier',
+      client_id: CLIENT_ID,
+      client_secret: 'shh',
+      redirect_uri: REDIRECT,
+      grant_type: 'authorization_code',
+    });
+  });
+
+  it('fails cleanly when Google refuses the code', async () => {
+    vi.stubGlobal('fetch', async () => Response.json({ error: 'invalid_grant' }, { status: 400 }));
+    const err = await exchangeCode('used-code', 'v', CLIENT).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GoogleAuthError);
+    expect((err as GoogleAuthError).reason).toBe('exchange_failed');
+    expect((err as Error).message).toContain('invalid_grant');
+  });
+
+  it('fails cleanly when Google cannot be reached', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('fetch failed');
+    });
+    await expect(exchangeCode('c', 'v', CLIENT)).rejects.toMatchObject({ reason: 'exchange_failed' });
   });
 });
