@@ -321,17 +321,31 @@ describe('session', () => {
 
   it('signs out only this device', async () => {
     await signup();
-    const laptop = cookieFrom(await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }));
-    const phone = cookieFrom(await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }));
+    const laptop = cookieFrom(
+      await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }),
+    );
+    const phone = cookieFrom(
+      await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }),
+    );
     await app.inject({ method: 'POST', url: '/api/auth/logout', headers: { cookie: phone } });
-    const me = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie: laptop } });
+    const me = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { cookie: laptop },
+    });
     expect(me.json().user.email).toBe(CREDS.email);
   });
 
   it('signs out every device with sign out everywhere', async () => {
     const first = cookieFrom(await signup());
-    const second = cookieFrom(await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }));
-    const res = await app.inject({ method: 'POST', url: '/api/auth/logout-all', headers: { cookie: first } });
+    const second = cookieFrom(
+      await app.inject({ method: 'POST', url: '/api/auth/login', payload: CREDS }),
+    );
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/logout-all',
+      headers: { cookie: first },
+    });
     expect(res.statusCode).toBe(200);
     for (const cookie of [first, second]) {
       const sets = await app.inject({ method: 'GET', url: '/api/sets', headers: { cookie } });
@@ -698,14 +712,24 @@ describe('per-user isolation', () => {
       headers: { cookie },
       payload: sampleSet(),
     });
-    await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
+    await app.inject({
+      method: 'DELETE',
+      url: '/api/auth/me',
+      headers: { cookie },
+      payload: { password: CREDS.password },
+    });
     const rows = (await database.get<{ n: number }>('SELECT COUNT(*) AS n FROM study_sets'))!;
     expect(rows.n).toBe(0);
   });
 
-  it('stops a deleted account\'s cookie from reading or writing anything', async () => {
+  it("stops a deleted account's cookie from reading or writing anything", async () => {
     const cookie = cookieFrom(await signup());
-    await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
+    await app.inject({
+      method: 'DELETE',
+      url: '/api/auth/me',
+      headers: { cookie },
+      payload: { password: CREDS.password },
+    });
 
     const read = await app.inject({ method: 'GET', url: '/api/sets', headers: { cookie } });
     expect(read.statusCode).toBe(401);
@@ -725,15 +749,29 @@ describe('per-user isolation', () => {
     await database.exec('PRAGMA foreign_keys = OFF');
     try {
       const cookie = cookieFrom(await signup());
-      await app.inject({ method: 'PUT', url: '/api/sets/s1', headers: { cookie }, payload: sampleSet() });
-      await app.inject({ method: 'POST', url: '/api/auth/forgot', payload: { email: CREDS.email } });
+      await app.inject({
+        method: 'PUT',
+        url: '/api/sets/s1',
+        headers: { cookie },
+        payload: sampleSet(),
+      });
+      await app.inject({
+        method: 'POST',
+        url: '/api/auth/forgot',
+        payload: { email: CREDS.email },
+      });
       await app.inject({
         method: 'POST',
         url: '/api/auth/login',
         payload: { ...CREDS, password: 'wrong password' },
       });
 
-      const del = await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
+      const del = await app.inject({
+        method: 'DELETE',
+        url: '/api/auth/me',
+        headers: { cookie },
+        payload: { password: CREDS.password },
+      });
       expect(del.statusCode).toBe(200);
       for (const table of [
         'users',

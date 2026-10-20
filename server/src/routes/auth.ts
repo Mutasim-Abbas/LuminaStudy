@@ -243,6 +243,34 @@ export async function authRoutes(app: FastifyInstance) {
    */
   app.delete('/api/auth/me', { preHandler: requireAuth }, async (request, reply) => {
     const { id, email } = request.user!;
+
+    // Irreversible, so a signed-in browser alone isn't enough: whoever is at
+    // the keyboard has to prove they own the account again. The password
+    // counts towards the same lockout as sign-in, so this can't be used to
+    // guess it.
+    const body = z
+      .object({ password: z.string().max(200).optional() })
+      .safeParse(request.body ?? {});
+    const password = body.success ? body.data.password : undefined;
+    const account = await database.get<UserRow>('SELECT * FROM users WHERE id = ?', id);
+    if (!account?.password_hash || !password) {
+      return reply
+        .code(403)
+        .send({ error: 'reauth_required', message: 'Enter your password to delete your account.' });
+    }
+    const now = Date.now();
+    const lock = await loginLockout(email, now);
+    if (lock.locked) {
+      return reply.code(429).send({
+        error: 'too_many_attempts',
+        message: `Too many attempts. Try again in ${formatWait(lock.retryAtMs!, now)}.`,
+      });
+    }
+    if (!(await verifyPassword(password, account.password_hash))) {
+      await recordLoginFailure(email, now);
+      return reply.code(403).send({ error: 'reauth_failed', message: 'That password is incorrect.' });
+    }
+
     await database.transaction(async (tx) => {
       for (const table of ['study_sets', 'ai_usage', 'password_resets', 'sessions']) {
         await tx.run(`DELETE FROM ${table} WHERE user_id = ?`, id);
