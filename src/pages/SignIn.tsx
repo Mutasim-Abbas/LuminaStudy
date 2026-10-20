@@ -5,6 +5,7 @@ import {
   ApiError,
   fetchCaptcha,
   getHealth,
+  GOOGLE_LINK_URL,
   GOOGLE_SIGN_IN_URL,
   requestPasswordReset,
   type Captcha,
@@ -191,6 +192,20 @@ export default function SignIn() {
           <p className="mt-4 font-body text-body-md text-on-surface-variant">
             Your study sets sync to this account, so they follow you to any device.
           </p>
+          {googleReason === 'linked' ? (
+            <p className="rise-in mt-4 rounded-lg bg-surface-container px-3 py-2 font-body text-body-sm text-on-surface">
+              Google is connected. You can now sign in with either.
+            </p>
+          ) : (
+            error && (
+              <p
+                role="alert"
+                className="rise-in mt-4 rounded-lg bg-error-container px-3 py-2 font-body text-body-sm text-on-error-container"
+              >
+                {error}
+              </p>
+            )
+          )}
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
               to="/"
@@ -207,6 +222,19 @@ export default function SignIn() {
               Sign out
             </button>
           </div>
+          {googleSignIn &&
+            (user.google ? (
+              <p className="mt-8 font-label-sm text-label-sm text-on-surface-variant">
+                Google sign-in is connected to this account.
+              </p>
+            ) : (
+              <div className="mt-8 flex flex-col gap-3 border-t border-surface-variant pt-6">
+                <p className="font-body text-body-sm text-on-surface-variant">
+                  Connect your Google account to sign in with one tap next time.
+                </p>
+                <GoogleButton href={GOOGLE_LINK_URL} />
+              </div>
+            ))}
         </div>
       </div>
     );
