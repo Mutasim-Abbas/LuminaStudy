@@ -163,6 +163,23 @@ describe('signup', () => {
     expect(second.json().error).toBe('captcha_failed');
   });
 
+  it('accepts a CAPTCHA answered on a different server instance', async () => {
+    // On a stateless deploy the image and the sign-up can reach different
+    // instances; the answer lives in the database, so that still works.
+    const other = await buildApp();
+    try {
+      const captcha = await solvedCaptcha(); // drawn by `app`
+      const res = await other.inject({
+        method: 'POST',
+        url: '/api/auth/signup',
+        payload: { name: 'Ada', ...CREDS, ...captcha },
+      });
+      expect(res.statusCode).toBe(201);
+    } finally {
+      await other.close();
+    }
+  });
+
   it('serves a CAPTCHA image and token', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/auth/captcha' });
     expect(res.statusCode).toBe(200);
