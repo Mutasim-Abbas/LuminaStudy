@@ -65,10 +65,17 @@ fixed, with tests that fail on the old code.
 
 - Passwords: scrypt with a per-user salt, constant-time comparison, 8–200
   characters. Never stored or returned in plain text.
-- Sessions: HS256 JWT with the algorithm pinned (no `alg: none` or algorithm
-  confusion), 7-day expiry, in an `httpOnly`, `SameSite=Lax` cookie that is
-  `Secure` in production. `/api/auth/me` reads the account from the database,
-  so a deleted account stops looking signed in.
+- Sessions: a server-side session record (only a SHA-256 hash of its id is
+  stored), named by an HS256 JWT with the algorithm pinned (no `alg: none` or
+  algorithm confusion) that carries only the account and session ids. 7-day
+  expiry, in an `httpOnly`, `SameSite=Lax` cookie that is `Secure` in
+  production. Every authenticated request checks that the session still
+  exists and its account too, so sessions end immediately on sign-out, on
+  "sign out of all devices", on a password reset (all of them, in the same
+  transaction as the new password) and on account deletion.
+- Deleting the account needs the password again — counted towards the sign-in
+  lockout — or, for an account with no password, a Google confirmation by the
+  same Google account within the last five minutes.
 - Sign-up: server-drawn image CAPTCHA (answer held server-side, single-use,
   5-minute expiry) plus a hidden honeypot field.
 - Sign-in: 5 failures per email, then a 15-minute lockout that survives IP
