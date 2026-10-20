@@ -20,7 +20,15 @@ import {
   resolveResetToken,
   RESET_TTL_MINUTES,
 } from '../lib/passwordReset.js';
-import { clearSessionCookie, currentSession, requireAuth, startSession } from '../lib/auth.js';
+import {
+  clearSessionCookie,
+  currentSession,
+  requireAuth,
+  SESSION_COOKIE,
+  startSession,
+  verifySession,
+} from '../lib/auth.js';
+import { endSession } from '../lib/sessions.js';
 
 /**
  * Email/password accounts.
@@ -194,7 +202,13 @@ export async function authRoutes(app: FastifyInstance) {
     return reply.send({ user: publicUser(row) });
   });
 
-  app.post('/api/auth/logout', async (_request, reply) => {
+  /**
+   * Ends this browser's session on the server, not just its cookie: a copy of
+   * the cookie taken earlier stops working too.
+   */
+  app.post('/api/auth/logout', async (request, reply) => {
+    const token = verifySession(request.cookies?.[SESSION_COOKIE]);
+    if (token) await endSession(token.sessionId);
     clearSessionCookie(reply);
     return reply.send({ ok: true });
   });
