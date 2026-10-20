@@ -1,4 +1,5 @@
 import { mkdirSync } from 'node:fs';
+import type { DatabaseSync } from 'node:sqlite';
 import { createClient } from '@libsql/client';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
@@ -10,27 +11,22 @@ import { sqliteDatabase } from './lib/sqliteDatabase.js';
 import { MIGRATIONS } from './migrations.js';
 
 /**
- * `node:sqlite` is loaded through createRequire rather than a static import.
- * It is still flagged experimental, so Node omits it from
- * `module.builtinModules` — the list bundlers consult to decide what to leave
- * alone. Vite therefore strips the `node:` prefix, tries to resolve a bare
- * `sqlite` package, and fails. Going through require hands the specifier
- * straight to Node, which keeps the test runner working. Behaviour under
- * `tsx` and the compiled build is unchanged.
+ * Local SQLite via Node's built-in `node:sqlite` (no native compilation),
+ * loaded only when a local file is actually used — a deploy on Turso never
+ * touches it.
+ *
+ * It is loaded through createRequire rather than a static import. The module
+ * is still flagged experimental, so Node omits it from `module.builtinModules`
+ * — the list bundlers consult to decide what to leave alone. Vite therefore
+ * strips the `node:` prefix, tries to resolve a bare `sqlite` package, and
+ * fails. Going through require hands the specifier straight to Node, which
+ * keeps the test runner working.
  */
 const nodeRequire = createRequire(import.meta.url);
-const { DatabaseSync } = nodeRequire('node:sqlite') as typeof import('node:sqlite');
-
-/**
- * SQLite via Node's built-in `node:sqlite` (no native compilation). The schema
- * is intentionally portable — column types and constraints map cleanly onto
- * Postgres when we later move to a hosted database.
- */
-
-type SqliteHandle = InstanceType<typeof DatabaseSync>;
 
 /** Opens (creating if needed) a local SQLite file with the settings this app relies on. */
-function openSqlite(path: string): SqliteHandle {
+function openSqlite(path: string): DatabaseSync {
+  const { DatabaseSync } = nodeRequire('node:sqlite') as typeof import('node:sqlite');
   mkdirSync(dirname(path), { recursive: true });
   const handle = new DatabaseSync(path);
 
