@@ -45,10 +45,14 @@ afterEach(() => {
 });
 
 /** Click "Continue with Google": what the browser takes to Google and keeps. */
-async function begin({ link = false, session }: { link?: boolean; session?: string } = {}) {
+async function begin({
+  link = false,
+  confirm = false,
+  session,
+}: { link?: boolean; confirm?: boolean; session?: string } = {}) {
   const res = await app.inject({
     method: 'GET',
-    url: `/api/auth/google${link ? '?link=1' : ''}`,
+    url: `/api/auth/google${link ? '?link=1' : confirm ? '?confirm=1' : ''}`,
     headers: session ? { cookie: session } : {},
   });
   const location = new URL(res.headers.location as string);
@@ -292,5 +296,52 @@ describe('health', () => {
   it('tells the sign-in page that Google sign-in is available', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/health' });
     expect(res.json().googleSignIn).toBe(true);
+  });
+});
+
+describe('deleting an account made through Google', () => {
+  /** Grace, signed in through Google — an account with no password. */
+  async function googleAccount() {
+    const res = await finish(await begin());
+    return sessionFrom(res)!;
+  }
+  const del = (cookie: string) =>
+    app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
+  async function confirm(session: string, claims: Record<string, unknown> = {}) {
+    const attempt = await begin({ confirm: true, session });
+    return finish(attempt, { claims, cookies: `${attempt.flowCookie}; ${session}` });
+  }
+
+  it('asks for a Google confirmation first', async () => {
+    const res = await del(await googleAccount());
+    expect(res.statusCode).toBe(403);
+    expect(res.json().message).toBe('Confirm with Google to delete your account.');
+  });
+
+  it('deletes the account once the same Google account confirms', async () => {
+    const session = await googleAccount();
+    expect(landing(await confirm(session))).toBe('/#/account?google=confirmed');
+    const res = await del(session);
+    expect(res.statusCode).toBe(200);
+    expect(await database.get('SELECT COUNT(*) AS n FROM users')).toEqual({ n: 0 });
+  });
+
+  it('does not accept a confirmation from a different Google account', async () => {
+    const session = await googleAccount();
+    const res = await confirm(session, { sub: 'someone-else', email: 'other@example.com' });
+    expect(landing(res)).toBe('/#/account?google=wrong_account');
+    expect((await del(session)).statusCode).toBe(403);
+  });
+
+  it('lets a confirmation lapse after five minutes', async () => {
+    const session = await googleAccount();
+    await confirm(session);
+    await database.run('UPDATE sessions SET reauthenticated_at = ?', Date.now() - 6 * 60 * 1000);
+    expect((await del(session)).statusCode).toBe(403);
+  });
+
+  it('will not start a confirmation without a signed-in account', async () => {
+    const { res } = await begin({ confirm: true });
+    expect(res.headers.location).toBe(`${APP_URL}/#/account?google=signed_out`);
   });
 });
