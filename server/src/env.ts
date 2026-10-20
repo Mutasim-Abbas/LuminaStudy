@@ -36,6 +36,11 @@ const schema = z.object({
   MAIL_FROM: z.string().default('Lumina Study <onboarding@resend.dev>'),
   // Base URL the reset link points at — must be where the app is served from.
   APP_URL: z.string().url().default('http://localhost:3001'),
+  // --- Sign in with Google (optional) ---
+  // An OAuth client of type "Web application" from Google Cloud. Without both,
+  // the Google button is simply not offered.
+  GOOGLE_CLIENT_ID: cleanSecret,
+  GOOGLE_CLIENT_SECRET: cleanSecret,
 });
 
 const parsed = schema.safeParse(process.env);
@@ -106,4 +111,12 @@ export const env = {
    * mailing them, which keeps local development working with no signup.
    */
   mailEnabled: Boolean(raw.RESEND_API_KEY && raw.RESEND_API_KEY.length > 10),
+  /** True when Sign in with Google is configured. */
+  googleSignIn: Boolean(raw.GOOGLE_CLIENT_ID && raw.GOOGLE_CLIENT_SECRET),
+  /**
+   * Where Google sends the browser back. Built from APP_URL, never from the
+   * request's Host header, which the client controls. Google matches it
+   * character for character against the client's registered redirect URIs.
+   */
+  googleRedirectUri: new URL('/api/auth/google/callback', raw.APP_URL).toString(),
 } as const;
