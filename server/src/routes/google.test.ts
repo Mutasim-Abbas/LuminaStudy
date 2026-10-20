@@ -15,7 +15,7 @@ const APP_URL = 'https://lumina.example';
 const google = fakeGoogle(CLIENT_ID);
 
 let app: FastifyInstance;
-let db: (typeof import('../db.js'))['db'];
+let database: (typeof import('../db.js'))['database'];
 let clearSigningKeyCache: () => void;
 let signSession: (typeof import('../lib/auth.js'))['signSession'];
 
@@ -23,7 +23,7 @@ beforeAll(async () => {
   vi.stubEnv('GOOGLE_CLIENT_ID', CLIENT_ID);
   vi.stubEnv('GOOGLE_CLIENT_SECRET', 'test-secret');
   vi.stubEnv('APP_URL', APP_URL);
-  ({ db } = await import('../db.js'));
+  ({ database } = await import('../db.js'));
   ({ clearSigningKeyCache } = await import('../lib/google.js'));
   ({ signSession } = await import('../lib/auth.js'));
   const { buildApp } = await import('../app.js');
@@ -35,8 +35,8 @@ afterAll(async () => {
   vi.unstubAllEnvs();
 });
 
-beforeEach(() => {
-  db.exec('DELETE FROM study_sets; DELETE FROM users;');
+beforeEach(async () => {
+  await database.exec('DELETE FROM study_sets; DELETE FROM users;');
   clearSigningKeyCache();
 });
 
@@ -162,7 +162,7 @@ describe('the callback refuses', () => {
     });
     expect(landing(res)).toBe('/#/account?google=failed');
     expect(sessionFrom(res)).toBeUndefined();
-    expect(db.prepare('SELECT count(*) AS n FROM users').get()).toEqual({ n: 0 });
+    expect(await database.get('SELECT count(*) AS n FROM users')).toEqual({ n: 0 });
   });
 
   it('to leave an attempt behind that could be replayed', async () => {
@@ -189,20 +189,20 @@ describe('signing in with Google', () => {
     });
 
     // No password: the account can only be entered through Google.
-    const row = db.prepare('SELECT password_hash, google_sub FROM users').get();
+    const row = await database.get('SELECT password_hash, google_sub FROM users');
     expect(row).toEqual({ password_hash: '', google_sub: 'google-sub-1' });
   });
 
   it('falls back to the email name when Google gives none', async () => {
     const res = await finish(await begin(), { claims: { name: undefined } });
     expect(landing(res)).toBe('/#/');
-    expect(db.prepare('SELECT name FROM users').get()).toEqual({ name: 'grace' });
+    expect(await database.get('SELECT name FROM users')).toEqual({ name: 'grace' });
   });
 
   it('refuses an email Google has not verified', async () => {
     const res = await finish(await begin(), { claims: { email_verified: false } });
     expect(landing(res)).toBe('/#/account?google=email_unverified');
-    expect(db.prepare('SELECT count(*) AS n FROM users').get()).toEqual({ n: 0 });
+    expect(await database.get('SELECT count(*) AS n FROM users')).toEqual({ n: 0 });
   });
 });
 
@@ -212,7 +212,7 @@ describe('returning to Google sign-in', () => {
     const again = await finish(await begin());
     expect(landing(again)).toBe('/#/');
     expect(sessionFrom(again)).toBeDefined();
-    expect(db.prepare('SELECT count(*) AS n FROM users').get()).toEqual({ n: 1 });
+    expect(await database.get('SELECT count(*) AS n FROM users')).toEqual({ n: 1 });
   });
 
   it('follows the Google account even after its email changes', async () => {
@@ -220,39 +220,41 @@ describe('returning to Google sign-in', () => {
     const res = await finish(await begin(), { claims: { email: 'grace@navy.example' } });
     expect(landing(res)).toBe('/#/');
     // Matched on Google's account id, so it is still the one account.
-    expect(db.prepare('SELECT email FROM users').all()).toEqual([{ email: 'grace@example.com' }]);
+    expect(await database.all('SELECT email FROM users')).toEqual([{ email: 'grace@example.com' }]);
   });
 });
 
 describe('an email that already has a password account', () => {
   it('is not joined to Google automatically', async () => {
     // Possibly made by someone who doesn't own the address (pre-hijacking).
-    db.prepare(
+    await database.run(
       "INSERT INTO users (id, email, name, password_hash, created_at) VALUES ('p1', 'grace@example.com', 'Grace', 'scrypt$00$00', 1)",
-    ).run();
+    );
 
     const res = await finish(await begin());
     expect(landing(res)).toBe('/#/account?google=account_exists');
     expect(sessionFrom(res)).toBeUndefined();
-    expect(db.prepare('SELECT google_sub FROM users').get()).toEqual({ google_sub: null });
+    expect(await database.get('SELECT google_sub FROM users')).toEqual({ google_sub: null });
   });
 });
 
 describe('connecting Google to a password account', () => {
   /** Ada, signed in with her password. */
-  function passwordAccount(id = 'p1', email = 'ada@example.com') {
-    db.prepare(
+  async function passwordAccount(id = 'p1', email = 'ada@example.com') {
+    await database.run(
       "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, 'Ada', 'scrypt$00$00', 1)",
-    ).run(id, email);
+      id,
+      email,
+    );
     return `lumina_session=${signSession({ id, email, name: 'Ada' })}`;
   }
 
   it('links the Google account, and Google sign-in then opens that account', async () => {
-    const session = passwordAccount();
+    const session = await passwordAccount();
     const attempt = await begin({ link: true, session });
     const res = await finish(attempt, { cookies: `${attempt.flowCookie}; ${session}` });
     expect(landing(res)).toBe('/#/account?google=linked');
-    expect(db.prepare("SELECT google_sub FROM users WHERE id = 'p1'").get()).toEqual({
+    expect(await database.get("SELECT google_sub FROM users WHERE id = 'p1'")).toEqual({
       google_sub: 'google-sub-1',
     });
 
@@ -260,25 +262,25 @@ describe('connecting Google to a password account', () => {
     // Google id that counts from now on.
     const signIn = await finish(await begin());
     expect(landing(signIn)).toBe('/#/');
-    expect(db.prepare('SELECT count(*) AS n FROM users').get()).toEqual({ n: 1 });
+    expect(await database.get('SELECT count(*) AS n FROM users')).toEqual({ n: 1 });
   });
 
   it('does not finish linking if that account is no longer signed in', async () => {
-    const session = passwordAccount();
+    const session = await passwordAccount();
     const attempt = await begin({ link: true, session });
     // Back from Google without the session (signed out, or another browser).
     const res = await finish(attempt);
     expect(landing(res)).toBe('/#/account?google=signed_out');
-    expect(db.prepare('SELECT google_sub FROM users').get()).toEqual({ google_sub: null });
+    expect(await database.get('SELECT google_sub FROM users')).toEqual({ google_sub: null });
   });
 
   it('refuses a Google account that already opens a different account', async () => {
     await finish(await begin()); // Grace's Google account made its own Lumina account
-    const session = passwordAccount();
+    const session = await passwordAccount();
     const attempt = await begin({ link: true, session });
     const res = await finish(attempt, { cookies: `${attempt.flowCookie}; ${session}` });
     expect(landing(res)).toBe('/#/account?google=already_linked');
-    expect(db.prepare("SELECT google_sub FROM users WHERE id = 'p1'").get()).toEqual({
+    expect(await database.get("SELECT google_sub FROM users WHERE id = 'p1'")).toEqual({
       google_sub: null,
     });
   });
