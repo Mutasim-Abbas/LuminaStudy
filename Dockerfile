@@ -1,7 +1,7 @@
 # Node 24: `node:sqlite` is stable here. On 22.x it exists only behind
 # --experimental-sqlite, so pinning the major version is load-bearing, not
 # housekeeping.
-FROM node:24-slim AS build
+FROM node:26-slim AS build
 WORKDIR /app
 
 # Frontend dependencies first, so a source-only change reuses this layer.
@@ -20,7 +20,7 @@ RUN npm run build
 RUN npm run build --prefix server
 
 
-FROM node:24-slim AS runtime
+FROM node:26-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
