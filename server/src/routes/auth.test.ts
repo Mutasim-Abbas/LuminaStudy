@@ -275,6 +275,13 @@ describe('session', () => {
     expect(res.json().user.email).toBe(CREDS.email);
   });
 
+  it('says whether the account has a password, never the hash', async () => {
+    const cookie = cookieFrom(await signup());
+    const res = await app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });
+    expect(res.json().user.password).toBe(true);
+    expect(res.body).not.toContain('scrypt$');
+  });
+
   it('says whether Google is linked, from the account rather than the token', async () => {
     const cookie = cookieFrom(await signup());
     const me = () => app.inject({ method: 'GET', url: '/api/auth/me', headers: { cookie } });

@@ -75,8 +75,18 @@ const signupBody = credentials.extend({
 });
 
 /** Never let a password hash leave the server. */
-function publicUser(row: Pick<UserRow, 'id' | 'email' | 'name'> & { google_sub?: string | null }) {
-  return { id: row.id, email: row.email, name: row.name, google: Boolean(row.google_sub) };
+function publicUser(
+  row: Pick<UserRow, 'id' | 'email' | 'name'> & { google_sub?: string | null; password_hash?: string },
+) {
+  return {
+    id: row.id,
+    email: row.email,
+    name: row.name,
+    google: Boolean(row.google_sub),
+    // Whether the account can confirm actions with a password, or only with
+    // Google. Never the hash itself.
+    password: Boolean(row.password_hash),
+  };
 }
 
 /**
