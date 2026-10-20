@@ -827,6 +827,41 @@ describe('deleting an account', () => {
   });
 });
 
+describe('cross-site requests', () => {
+  const login = (headers: Record<string, string>) =>
+    app.inject({ method: 'POST', url: '/api/auth/login', headers, payload: CREDS });
+
+  it('refuses a write whose Origin is another site', async () => {
+    const res = await login({ origin: 'https://evil.example' });
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toBe('cross_site_request');
+  });
+
+  it('refuses a write the browser marks as cross-site', async () => {
+    expect((await login({ 'sec-fetch-site': 'cross-site' })).statusCode).toBe(403);
+  });
+
+  it('refuses a sandboxed page, whose Origin is "null"', async () => {
+    expect((await login({ origin: 'null' })).statusCode).toBe(403);
+  });
+
+  it('accepts the app\'s own origin and clients that send none', async () => {
+    await signup();
+    expect((await login({ origin: 'http://localhost:5174' })).statusCode).toBe(200);
+    expect((await login({ 'sec-fetch-site': 'same-origin' })).statusCode).toBe(200);
+    expect((await login({})).statusCode).toBe(200);
+  });
+
+  it('leaves reads alone', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/auth/me',
+      headers: { origin: 'https://evil.example' },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+});
+
 describe('password reset', () => {
   /** Pull the raw token out of the email the server just "sent". */
   function tokenFromEmail(): string {
