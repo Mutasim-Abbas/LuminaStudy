@@ -1,4 +1,10 @@
-import { createHash, randomBytes } from 'node:crypto';
+import {
+  createHash,
+  createPublicKey,
+  randomBytes,
+  type JsonWebKey,
+  type KeyObject,
+} from 'node:crypto';
 
 /**
  * Sign in with Google, as a server-side OpenID Connect authorization-code flow.
@@ -111,4 +117,49 @@ export async function exchangeCode(
     );
   }
   return body.id_token;
+}
+
+export const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
+
+/** Google's public signing keys by key id, kept as long as Google says they're good. */
+let keyCache: { keys: Map<string, KeyObject>; fetchedAt: number; expiresAt: number } | null = null;
+
+async function fetchSigningKeys(now: number): Promise<Map<string, KeyObject>> {
+  let res: Response;
+  try {
+    res = await fetch(GOOGLE_JWKS_URL, { signal: AbortSignal.timeout(10_000) });
+  } catch (err) {
+    throw new GoogleAuthError('invalid_token', `Could not reach Google: ${(err as Error).message}`);
+  }
+  if (!res.ok) {
+    throw new GoogleAuthError('invalid_token', `Could not fetch Google's keys (HTTP ${res.status})`);
+  }
+  const { keys } = (await res.json()) as { keys: (JsonWebKey & { kid: string })[] };
+  const maxAge = Number(/max-age=(\d+)/.exec(res.headers.get('cache-control') ?? '')?.[1] ?? 3600);
+  keyCache = {
+    keys: new Map(keys.map((k) => [k.kid, createPublicKey({ key: k, format: 'jwk' })])),
+    fetchedAt: now,
+    expiresAt: now + maxAge * 1000,
+  };
+  return keyCache.keys;
+}
+
+/**
+ * The public key a token names in its header. Google rotates keys, so an
+ * unknown id triggers one refresh — but not more than once a minute, or a
+ * stream of tokens with made-up ids would turn into a stream of requests.
+ */
+export async function signingKey(kid: string, now: number): Promise<KeyObject> {
+  let keys = keyCache && keyCache.expiresAt > now ? keyCache.keys : await fetchSigningKeys(now);
+  if (!keys.has(kid) && keyCache && now - keyCache.fetchedAt > 60_000) {
+    keys = await fetchSigningKeys(now);
+  }
+  const key = keys.get(kid);
+  if (!key) throw new GoogleAuthError('invalid_token', 'The ID token names an unknown signing key.');
+  return key;
+}
+
+/** Forgets the cached keys. For tests. */
+export function clearSigningKeyCache(): void {
+  keyCache = null;
 }
