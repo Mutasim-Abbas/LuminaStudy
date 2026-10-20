@@ -90,6 +90,7 @@ describe('openDatabase', () => {
     );
     expect(tables.map((t) => t.name)).toEqual([
       'ai_usage',
+      'captcha_challenges',
       'login_attempts',
       'password_resets',
       'study_sets',
