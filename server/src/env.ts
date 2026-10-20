@@ -2,7 +2,9 @@ import { randomBytes } from 'node:crypto';
 import { config } from 'dotenv';
 import { z } from 'zod';
 
-config();
+// Tests run on the settings in vitest.config.ts alone: a developer's local
+// .env — a real AI key, a different APP_URL — must not change what they test.
+if (process.env.NODE_ENV !== 'test') config();
 
 // Users paste keys into Notepad — tolerate stray spaces/quotes around them.
 const cleanSecret = z
