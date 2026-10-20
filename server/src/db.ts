@@ -1,8 +1,10 @@
 import { mkdirSync } from 'node:fs';
+import { createClient } from '@libsql/client';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 import { env } from './env.js';
 import type { Database as AsyncDatabase } from './lib/database.js';
+import { libsqlDatabase } from './lib/libsqlDatabase.js';
 import { migrate } from './lib/migrate.js';
 import { sqliteDatabase } from './lib/sqliteDatabase.js';
 import { MIGRATIONS } from './migrations.js';
@@ -64,8 +66,23 @@ export async function openDatabase(path: string): Promise<AsyncDatabase> {
   return database;
 }
 
-/** The app's database, through the async interface. */
-export const database: AsyncDatabase = await openDatabase(env.DATABASE_PATH);
+/**
+ * Opens a libSQL database — Turso (`libsql://…` with its token) or a local
+ * `file:` URL — schema up to date.
+ */
+export async function openTurso(url: string, authToken?: string): Promise<AsyncDatabase> {
+  const database = libsqlDatabase(createClient({ url, authToken }));
+  await runMigrations(database);
+  return database;
+}
+
+/**
+ * The app's database, through the async interface: Turso when DATABASE_URL is
+ * set (a stateless deploy such as Vercel), otherwise the local SQLite file.
+ */
+export const database: AsyncDatabase = env.DATABASE_URL
+  ? await openTurso(env.DATABASE_URL, env.DATABASE_AUTH_TOKEN)
+  : await openDatabase(env.DATABASE_PATH);
 
 export interface UserRow {
   id: string;
