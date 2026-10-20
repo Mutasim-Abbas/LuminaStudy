@@ -28,7 +28,12 @@ import {
   startSession,
   verifySession,
 } from '../lib/auth.js';
-import { endAllSessions, endSession, pruneSessions } from '../lib/sessions.js';
+import {
+  endAllSessions,
+  endSession,
+  pruneSessions,
+  recentlyReauthenticated,
+} from '../lib/sessions.js';
 
 /**
  * Email/password accounts.
@@ -245,30 +250,42 @@ export async function authRoutes(app: FastifyInstance) {
     const { id, email } = request.user!;
 
     // Irreversible, so a signed-in browser alone isn't enough: whoever is at
-    // the keyboard has to prove they own the account again. The password
-    // counts towards the same lockout as sign-in, so this can't be used to
-    // guess it.
-    const body = z
-      .object({ password: z.string().max(200).optional() })
-      .safeParse(request.body ?? {});
-    const password = body.success ? body.data.password : undefined;
-    const account = await database.get<UserRow>('SELECT * FROM users WHERE id = ?', id);
-    if (!account?.password_hash || !password) {
-      return reply
-        .code(403)
-        .send({ error: 'reauth_required', message: 'Enter your password to delete your account.' });
-    }
+    // the keyboard has to prove they own the account again — with the
+    // password, or by confirming with Google in the last few minutes (the only
+    // way for an account that has no password). The password counts towards
+    // the same lockout as sign-in, so this can't be used to guess it.
     const now = Date.now();
-    const lock = await loginLockout(email, now);
-    if (lock.locked) {
-      return reply.code(429).send({
-        error: 'too_many_attempts',
-        message: `Too many attempts. Try again in ${formatWait(lock.retryAtMs!, now)}.`,
-      });
-    }
-    if (!(await verifyPassword(password, account.password_hash))) {
-      await recordLoginFailure(email, now);
-      return reply.code(403).send({ error: 'reauth_failed', message: 'That password is incorrect.' });
+    const current = await currentSession(request);
+    const confirmedWithGoogle = current ? recentlyReauthenticated(current.session, now) : false;
+
+    if (!confirmedWithGoogle) {
+      const body = z
+        .object({ password: z.string().max(200).optional() })
+        .safeParse(request.body ?? {});
+      const password = body.success ? body.data.password : undefined;
+      const account = current?.user;
+      if (!account?.password_hash) {
+        return reply.code(403).send({
+          error: 'reauth_required',
+          message: 'Confirm with Google to delete your account.',
+        });
+      }
+      if (!password) {
+        return reply
+          .code(403)
+          .send({ error: 'reauth_required', message: 'Enter your password to delete your account.' });
+      }
+      const lock = await loginLockout(email, now);
+      if (lock.locked) {
+        return reply.code(429).send({
+          error: 'too_many_attempts',
+          message: `Too many attempts. Try again in ${formatWait(lock.retryAtMs!, now)}.`,
+        });
+      }
+      if (!(await verifyPassword(password, account.password_hash))) {
+        await recordLoginFailure(email, now);
+        return reply.code(403).send({ error: 'reauth_failed', message: 'That password is incorrect.' });
+      }
     }
 
     await database.transaction(async (tx) => {
