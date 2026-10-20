@@ -703,6 +703,24 @@ describe('per-user isolation', () => {
     expect(rows.n).toBe(0);
   });
 
+  it('stops a deleted account\'s cookie from reading or writing anything', async () => {
+    const cookie = cookieFrom(await signup());
+    await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
+
+    const read = await app.inject({ method: 'GET', url: '/api/sets', headers: { cookie } });
+    expect(read.statusCode).toBe(401);
+    // Without the session check this would write an orphaned set on Turso,
+    // where foreign keys are off.
+    const write = await app.inject({
+      method: 'PUT',
+      url: '/api/sets/s1',
+      headers: { cookie },
+      payload: sampleSet(),
+    });
+    expect(write.statusCode).toBe(401);
+    expect(await database.get('SELECT COUNT(*) AS n FROM study_sets')).toEqual({ n: 0 });
+  });
+
   it('removes everything the account owns even with foreign keys off, as on Turso', async () => {
     await database.exec('PRAGMA foreign_keys = OFF');
     try {
@@ -717,7 +735,14 @@ describe('per-user isolation', () => {
 
       const del = await app.inject({ method: 'DELETE', url: '/api/auth/me', headers: { cookie } });
       expect(del.statusCode).toBe(200);
-      for (const table of ['users', 'study_sets', 'ai_usage', 'password_resets', 'login_attempts']) {
+      for (const table of [
+        'users',
+        'study_sets',
+        'ai_usage',
+        'password_resets',
+        'login_attempts',
+        'sessions',
+      ]) {
         expect(await database.get(`SELECT COUNT(*) AS n FROM ${table}`), table).toEqual({ n: 0 });
       }
     } finally {

@@ -243,7 +243,7 @@ export async function authRoutes(app: FastifyInstance) {
   app.delete('/api/auth/me', { preHandler: requireAuth }, async (request, reply) => {
     const { id, email } = request.user!;
     await database.transaction(async (tx) => {
-      for (const table of ['study_sets', 'ai_usage', 'password_resets']) {
+      for (const table of ['study_sets', 'ai_usage', 'password_resets', 'sessions']) {
         await tx.run(`DELETE FROM ${table} WHERE user_id = ?`, id);
       }
       await tx.run('DELETE FROM login_attempts WHERE email = ?', email);
