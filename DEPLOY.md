@@ -64,6 +64,11 @@ Expect `{"ok":true,"aiEnabled":true,...}`. Sign up, sign out, sign back in,
 then redeploy and sign in again — the account surviving a redeploy proves the
 data is in Turso, not on a function's disk.
 
+Then work through the deploy-day security checklist in
+[docs/security.md](docs/security.md#5-deploy-day-security-checklist): headers,
+client IPs, sessions ending, isolation between accounts, deletion, cross-site
+requests and Google sign-in, checked against the live app.
+
 ## Alternative: one container on Railway
 
 The app runs as one Node process that serves both the API and the built
