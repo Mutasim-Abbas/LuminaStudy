@@ -28,7 +28,7 @@ import {
   startSession,
   verifySession,
 } from '../lib/auth.js';
-import { endSession } from '../lib/sessions.js';
+import { endAllSessions, endSession } from '../lib/sessions.js';
 
 /**
  * Email/password accounts.
@@ -209,6 +209,17 @@ export async function authRoutes(app: FastifyInstance) {
   app.post('/api/auth/logout', async (request, reply) => {
     const token = verifySession(request.cookies?.[SESSION_COOKIE]);
     if (token) await endSession(token.sessionId);
+    clearSessionCookie(reply);
+    return reply.send({ ok: true });
+  });
+
+  /**
+   * Sign out everywhere: ends every session of the account, this one
+   * included. For a lost phone, a shared computer, or a suspicion that someone
+   * else is signed in.
+   */
+  app.post('/api/auth/logout-all', { preHandler: requireAuth }, async (request, reply) => {
+    await endAllSessions(request.user!.id);
     clearSessionCookie(reply);
     return reply.send({ ok: true });
   });
