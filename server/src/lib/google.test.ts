@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import { createHash, generateKeyPairSync } from 'node:crypto';
+import jwt from 'jsonwebtoken';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeGoogle } from '../testing/fakeGoogle.js';
 import {
@@ -112,5 +113,26 @@ describe('verifyIdToken', () => {
   ])('rejects a token issued to %s', async (_case, claims) => {
     const token = google.idToken({ nonce: 'nonce-1', ...claims });
     await expect(verify(token)).rejects.toMatchObject({ reason: 'invalid_token' });
+  });
+
+  it('rejects a token signed by a key that is not Google\'s', async () => {
+    // Right key id, wrong key: the classic forgery.
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const token = google.idToken({ nonce: 'nonce-1' }, { key: privateKey });
+    await expect(verify(token)).rejects.toMatchObject({ reason: 'invalid_token' });
+  });
+
+  it('rejects a token naming a key Google never published', async () => {
+    const token = google.idToken({ nonce: 'nonce-1' }, { kid: 'made-up' });
+    await expect(verify(token)).rejects.toMatchObject({ reason: 'invalid_token' });
+  });
+
+  it('rejects an unsigned token', async () => {
+    const [, payload] = google.idToken({ nonce: 'nonce-1' }).split('.');
+    const header = Buffer.from(JSON.stringify({ alg: 'none', kid: google.kid })).toString('base64url');
+    await expect(verify(`${header}.${payload}.`)).rejects.toMatchObject({ reason: 'invalid_token' });
+    // And an HMAC-signed token, the other classic algorithm confusion.
+    const hmac = jwt.sign({ nonce: 'nonce-1' }, 'not-a-real-key', { keyid: google.kid });
+    await expect(verify(hmac)).rejects.toMatchObject({ reason: 'invalid_token' });
   });
 });
