@@ -45,12 +45,14 @@ Vercel → the project → **Settings** → **Environment Variables**:
 | `JWT_SECRET` | 32+ random characters, e.g. from `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` |
 | `GROQ_API_KEY` | your Groq key |
 | `RESEND_API_KEY` | your Resend key |
-| `APP_URL` | `https://<your-project>.vercel.app` |
-| `CORS_ORIGIN` | the same URL |
 | `TRUST_PROXY` | `all` — Vercel overwrites `X-Forwarded-For` with the real client address, so it is safe to trust here |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional, see "Sign in with Google" below |
 
 No Litestream variables: backups are Turso's job on this setup.
+
+`APP_URL` and `CORS_ORIGIN` aren't needed here: the server takes the address
+from Vercel's own `VERCEL_PROJECT_PRODUCTION_URL`, and accepts each preview
+deployment's own URLs too. Set `APP_URL` only for a custom domain.
 
 ### 4. Deploy and verify
 
