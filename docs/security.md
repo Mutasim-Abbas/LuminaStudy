@@ -119,7 +119,9 @@ fixed, with tests that fail on the old code.
 
 Client IPs come only from trusted proxies: private address ranges by default in
 production, or `TRUST_PROXY=all` on Vercel, which overwrites `X-Forwarded-For`
-itself. A failed AI request doesn't spend the user's daily quota.
+itself. An AI generation reserves its slot in the daily quota atomically
+before calling the AI, so simultaneous requests can't all slip under the
+limit; a failed call gives the slot back.
 
 ### 2.5 Data access and integrity
 
@@ -139,7 +141,11 @@ itself. A failed AI request doesn't spend the user's daily quota.
 - AI provider failures show a plain sentence; the provider's message is logged.
 - Request logs record method, path, host and IP — no query strings, cookies or
   bodies.
-- Helmet sets hardened HTTP headers; CORS is locked to the app's own origin.
+- Helmet sets hardened HTTP headers (including `Referrer-Policy: no-referrer`);
+  CORS is locked to the app's own origin.
+- Cross-site request forgery: besides the SameSite cookie, every POST, PUT,
+  PATCH or DELETE to the API whose `Origin` names another site — or whose
+  `Sec-Fetch-Site` is `cross-site` — gets a 403 before any route runs.
 
 ### 2.7 Frontend
 
