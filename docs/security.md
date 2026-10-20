@@ -163,21 +163,31 @@ limit; a failed call gives the slot back.
 - The Litestream binary in the Docker image is pinned by image digest, not
   just tag, since it reads every byte of user data.
 - CI runs with minimal permissions and uses no secrets.
+- CI scans every commit with gitleaks 8.30.1 (pinned by image digest); only
+  two exact test-only fake values are allowlisted (`.gitleaks.toml`). The
+  Pages deploy waits for the scan.
+- Dependabot proposes updates weekly for both npm packages, the workflow's
+  actions and the Docker images.
 - Node 24 pinned for Vercel and CI.
 
 ### 2.9 How it is tested
 
-- 151 server tests, run on both database backends: local SQLite and libSQL
-  (Turso's client). They cover token forgery (expired, unsigned, wrong
-  secret, `alg: none`), account isolation, lockout, quota, reset-token
-  replay, CAPTCHA races, Google token forgery (wrong key, wrong audience or
-  issuer, unsigned, HMAC confusion, expired, wrong nonce, unverified email),
-  login CSRF on the Google callback, and AI error leaks.
+- 179 server tests, run on both database backends: local SQLite and libSQL
+  (Turso's client), and 88 frontend tests. They cover token forgery (expired,
+  unsigned, wrong secret, `alg: none`), session revocation (sign-out, sign out
+  everywhere, password reset, deleted accounts), re-authentication before
+  deletion, account isolation, lockout, the AI quota under simultaneous
+  requests, reset-token replay, CAPTCHA races, cross-site writes, Google token
+  forgery (wrong key, wrong audience or issuer, unsigned, HMAC confusion,
+  expired, wrong nonce, unverified email), login CSRF on the Google callback,
+  and AI error leaks.
 - For key protections the tests were also run against deliberately broken
   code, to confirm they fail when the protection is missing: the proxy trust,
   the transaction queue on both backends, the atomic CAPTCHA check, explicit
-  account deletion and AI error hiding. This caught one test that wasn't
-  testing anything; it was rewritten.
+  account deletion, AI error hiding, session revocation on sign-out and
+  reset, the atomic AI quota (the old code let five of five simultaneous
+  requests through) and the reset-link clean-up. This caught one test that
+  wasn't testing anything; it was rewritten.
 
 ## 3. Leak audit (2026-10-20)
 
