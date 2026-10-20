@@ -151,4 +151,16 @@ describe('verifyIdToken', () => {
     const token = google.idToken({ nonce: 'nonce-1', email_verified: false });
     await expect(verify(token)).rejects.toMatchObject({ reason: 'email_unverified' });
   });
+
+  it('fetches Google\'s keys once and reuses them, even for made-up key ids', async () => {
+    const fetchSpy = vi.fn(google.fetchImpl());
+    vi.stubGlobal('fetch', fetchSpy);
+    await verify(google.idToken({ nonce: 'nonce-1' }));
+    await verify(google.idToken({ nonce: 'nonce-1' }));
+    // A burst of tokens with invented key ids must not become a burst of requests.
+    for (let i = 0; i < 5; i++) {
+      await verify(google.idToken({ nonce: 'nonce-1' }, { kid: `fake-${i}` })).catch(() => {});
+    }
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
 });
