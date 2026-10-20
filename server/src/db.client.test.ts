@@ -1,43 +1,42 @@
-import { createRequire } from 'node:module';
-import { sep } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
 
 /**
- * Which libSQL client a URL gets. Its own file, so it starts in a fresh
- * process (pool: 'forks') where nothing has loaded the native driver yet —
- * and the app itself is pinned to plain local SQLite, even in the CI run that
- * otherwise puts it on a libSQL file.
+ * Which libSQL client a URL gets, judged by whether the full client's native
+ * driver ends up loaded. Each check runs in a brand-new Node process: test
+ * files can share one (the single-process CI run does), and a driver loaded
+ * by an earlier file would make this pass or fail for the wrong reason.
  */
 
-let libsqlClient: (typeof import('./db.js'))['libsqlClient'];
+const SERVER_DIR = fileURLToPath(new URL('..', import.meta.url));
 
-beforeAll(async () => {
-  vi.stubEnv('DATABASE_URL', '');
-  ({ libsqlClient } = await import('./db.js'));
-});
-
-afterAll(() => {
-  vi.unstubAllEnvs();
-});
-
-const NATIVE_DRIVER = `${sep}node_modules${sep}libsql${sep}`;
-
-function nativeDriverLoaded(): boolean {
-  return Object.keys(createRequire(import.meta.url).cache).some((path) => path.includes(NATIVE_DRIVER));
+function nativeDriverLoadedFor(url: string): boolean {
+  const script = `
+    import { createRequire } from 'node:module';
+    const { libsqlClient } = await import('./src/db.ts');
+    const client = await libsqlClient(${JSON.stringify(url)}, 'token');
+    const cache = createRequire(process.cwd() + '/').cache;
+    client.close();
+    console.log(Object.keys(cache).some((p) => p.includes('/node_modules/libsql/')));
+  `;
+  const run = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', script], {
+    cwd: SERVER_DIR,
+    // The app itself on plain local SQLite, whatever this test run uses.
+    env: { ...process.env, DATABASE_URL: '' },
+    encoding: 'utf8',
+  });
+  if (run.status !== 0) throw new Error(run.stderr);
+  return run.stdout.trim().split('\n').at(-1) === 'true';
 }
 
 describe('libsqlClient', () => {
-  it('reaches a remote Turso database without loading the native driver', async () => {
+  it('reaches a remote Turso database without loading the native driver', () => {
     // A Vercel function can't load it: the binary isn't in the bundle.
-    const client = await libsqlClient('libsql://example.turso.io', 'token');
-    expect(nativeDriverLoaded()).toBe(false);
-    client.close();
+    expect(nativeDriverLoadedFor('libsql://example.turso.io')).toBe(false);
   });
 
-  it('loads the full client, native driver included, only for a local file', async () => {
-    const client = await libsqlClient('file::memory:');
-    expect(client.protocol).toBe('file');
-    expect(nativeDriverLoaded()).toBe(true);
-    client.close();
+  it('loads the full client, native driver included, only for a local file', () => {
+    expect(nativeDriverLoadedFor('file::memory:')).toBe(true);
   });
 });
