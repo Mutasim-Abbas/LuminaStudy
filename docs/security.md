@@ -106,3 +106,44 @@ itself. A failed AI request doesn't spend the user's daily quota.
 - Zod validates every request body; bodies are capped at 1 MB.
 - Writes that must happen together (bulk sync, account deletion, issuing a
   reset link, each migration) run in one transaction.
+
+### 2.6 Errors, logs and responses
+
+- A global error handler turns every unexpected error into a generic 500; stack
+  traces stay server-side.
+- AI provider failures show a plain sentence; the provider's message is logged.
+- Request logs record method, path, host and IP — no query strings, cookies or
+  bodies.
+- Helmet sets hardened HTTP headers; CORS is locked to the app's own origin.
+
+### 2.7 Frontend
+
+- Reads no environment values and contains no keys; no source maps are
+  shipped.
+- The only raw HTML insertion is the CAPTCHA image, which the server itself
+  generates.
+- Session cookies are invisible to page scripts, so an XSS bug can't steal a
+  login.
+
+### 2.8 Infrastructure and supply chain
+
+- Production dependencies audit clean. The one new runtime dependency,
+  `@libsql/client` 0.18.0, was a release more than two weeks old when added.
+- The Litestream binary in the Docker image is pinned by image digest, not
+  just tag, since it reads every byte of user data.
+- CI runs with minimal permissions and uses no secrets.
+- Node 24 pinned for Vercel and CI.
+
+### 2.9 How it is tested
+
+- 151 server tests, run on both database backends: local SQLite and libSQL
+  (Turso's client). They cover token forgery (expired, unsigned, wrong
+  secret, `alg: none`), account isolation, lockout, quota, reset-token
+  replay, CAPTCHA races, Google token forgery (wrong key, wrong audience or
+  issuer, unsigned, HMAC confusion, expired, wrong nonce, unverified email),
+  login CSRF on the Google callback, and AI error leaks.
+- For key protections the tests were also run against deliberately broken
+  code, to confirm they fail when the protection is missing: the proxy trust,
+  the transaction queue on both backends, the atomic CAPTCHA check, explicit
+  account deletion and AI error hiding. This caught one test that wasn't
+  testing anything; it was rewritten.
