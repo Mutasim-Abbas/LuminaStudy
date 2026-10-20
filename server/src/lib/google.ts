@@ -5,6 +5,7 @@ import {
   type JsonWebKey,
   type KeyObject,
 } from 'node:crypto';
+import jwt from 'jsonwebtoken';
 
 /**
  * Sign in with Google, as a server-side OpenID Connect authorization-code flow.
@@ -162,4 +163,63 @@ export async function signingKey(kid: string, now: number): Promise<KeyObject> {
 /** Forgets the cached keys. For tests. */
 export function clearSigningKeyCache(): void {
   keyCache = null;
+}
+
+export const GOOGLE_ISSUERS: [string, string] = ['https://accounts.google.com', 'accounts.google.com'];
+
+/** Who Google says signed in. */
+export interface GoogleIdentity {
+  /** Google's stable account id — the thing to key on, not the email. */
+  sub: string;
+  /** Lower-cased, and verified by Google. */
+  email: string;
+  name: string;
+}
+
+/**
+ * Checks an ID token fully: Google's signature, that it was issued by Google
+ * to this app, that it is current, that it answers this sign-in (nonce), and
+ * that Google has verified the email address. Anything less and the token is
+ * refused.
+ */
+export async function verifyIdToken(
+  idToken: string,
+  opts: { clientId: string; nonce: string; now: number },
+): Promise<GoogleIdentity> {
+  const decoded = jwt.decode(idToken, { complete: true });
+  const kid = decoded && typeof decoded === 'object' ? decoded.header.kid : undefined;
+  if (!kid) throw new GoogleAuthError('invalid_token', 'The ID token has no key id.');
+  const key = await signingKey(kid, opts.now);
+
+  let claims: jwt.JwtPayload;
+  try {
+    claims = jwt.verify(idToken, key, {
+      // Pinned, as for our own sessions: never let the token pick its algorithm.
+      algorithms: ['RS256'],
+      audience: opts.clientId,
+      issuer: GOOGLE_ISSUERS,
+      clockTimestamp: Math.floor(opts.now / 1000),
+      clockTolerance: 60,
+    }) as jwt.JwtPayload;
+  } catch (err) {
+    throw new GoogleAuthError('invalid_token', `The ID token failed verification: ${(err as Error).message}`);
+  }
+
+  if (claims.nonce !== opts.nonce) {
+    throw new GoogleAuthError('invalid_token', 'The ID token belongs to a different sign-in.');
+  }
+  if (typeof claims.sub !== 'string' || typeof claims.email !== 'string') {
+    throw new GoogleAuthError('invalid_token', 'The ID token has no account id or email.');
+  }
+  // An unverified address could belong to someone else; matching or creating
+  // an account by it would hand that account to whoever typed it.
+  if (claims.email_verified !== true) {
+    throw new GoogleAuthError('email_unverified', 'Google has not verified this email address.');
+  }
+
+  return {
+    sub: claims.sub,
+    email: claims.email.toLowerCase(),
+    name: typeof claims.name === 'string' ? claims.name.trim().slice(0, 80) : '',
+  };
 }
